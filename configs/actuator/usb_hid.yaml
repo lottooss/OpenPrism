@@ -1,0 +1,12 @@
+# Actuator Profile: Generic USB HID Microcontroller Actuator
+# Milestone M9-03: Authorized lab and robotics experiment backend
+
+actuator:
+  backend: "usb_hid"
+  scheduler_hz: 1000
+  relative_counts: true
+  cancel_superseded: true
+  counts_per_pixel_x: 1.0
+  counts_per_pixel_y: 1.0
+  hid_com_port: "COM3"
+  hid_baud_rate: 115200

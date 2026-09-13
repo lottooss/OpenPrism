@@ -1,0 +1,47 @@
+// schemas/bus/tracked_target.fbs
+// OpenPrism Canonical Bus - Tracked Target v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Tracking filter lifecycle state
+enum TrackState:ubyte {
+  Tentative = 0,
+  Confirmed = 1,
+  Occluded = 2,
+  Coasting = 3,
+  Lost = 4
+}
+
+/// @brief Single tracked target state estimated by Kalman/lifecycle tracker
+table TrackedTarget {
+  track_id:ulong;
+  state:TrackState = Confirmed;
+  total_visible_frames:uint = 1;
+  total_missed_frames:uint = 0;
+  filtered_center_px:Vec2f;
+  filtered_velocity_px_per_s:Vec2f;
+  filtered_acceleration_px_per_s2:Vec2f;
+  covariance_px2:Covariance2f;
+  predicted_center_px:Vec2f;
+  prediction_time_ns:long;
+  effective_radius_px:float;
+  confidence:float;
+  target_value:float = 1.0;
+  semantic_id:uint = 0;
+}
+
+/// @brief Batch of tracked targets published by tracking stage
+table TrackedTargetBatch {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  frame_id:ulong;
+  timestamp_ns:long;
+  tracks:[TrackedTarget];
+}
+
+root_type TrackedTargetBatch;
+file_identifier "ATT1";
+file_extension "att";

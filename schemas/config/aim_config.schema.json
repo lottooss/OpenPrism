@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/aim_config.schema.json",
+  "title": "AimAgentConfig",
+  "$ref": "root.schema.json"
+}

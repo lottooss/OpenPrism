@@ -1,0 +1,29 @@
+// schemas/bus/actuation_command.fbs
+// OpenPrism Canonical Bus - Actuation Command v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Mouse button state change request
+table ButtonTransition {
+  button:MouseButton = None;
+  action:ButtonAction = None;
+}
+
+/// @brief Canonical low-latency actuation command
+table ActuationCommand {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  generated_at_ns:long;
+  desired_apply_time_ns:long;
+  delta_x_counts:int;
+  delta_y_counts:int;
+  button_transition:ButtonTransition;
+  cancel_superseded:bool = true;
+}
+
+root_type ActuationCommand;
+file_identifier "AAC1";
+file_extension "aac";

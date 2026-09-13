@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/annotation_format.schema.json",
+  "title": "AimAgentAnnotationFormat",
+  "description": "Schema for versioned target sphere ground truth annotations, subpixel centers, radii, visibility, ignore regions, and synthetic provenance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sample_id",
+    "image_path",
+    "image_sha256",
+    "width",
+    "height",
+    "targets",
+    "ignore_regions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "sample_id": {
+      "type": "string"
+    },
+    "image_path": {
+      "type": "string"
+    },
+    "image_sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target_id",
+          "class_id",
+          "class_name",
+          "center_px",
+          "radius_px",
+          "bbox_xyxy",
+          "bbox_yolo",
+          "visibility",
+          "visibility_ratio"
+        ],
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "class_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "class_name": {
+            "type": "string"
+          },
+          "center_px": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "radius_px": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "bbox_xyxy": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "bbox_yolo": {
+            "type": "array",
+            "items": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["visible", "partial", "occluded"]
+          },
+          "visibility_ratio": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "occluded_by": {
+            "type": "array",
+            "items": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "ignore_regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["region_id", "region_type", "bbox_xyxy"],
+        "properties": {
+          "region_id": {
+            "type": "string"
+          },
+          "region_type": {
+            "type": "string",
+            "enum": ["crosshair", "hud_overlay", "weapon_model", "custom"]
+          },
+          "bbox_xyxy": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generator_name",
+        "random_seed",
+        "background_theme",
+        "augmentations_applied",
+        "created_at_utc"
+      ],
+      "properties": {
+        "generator_name": {
+          "type": "string"
+        },
+        "random_seed": {
+          "type": "integer"
+        },
+        "background_theme": {
+          "type": "string"
+        },
+        "augmentations_applied": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "created_at_utc": {
+          "type": "string"
+        },
+        "source_session_id": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

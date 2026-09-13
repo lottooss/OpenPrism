@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/trajectory.schema.json",
+  "title": "AimAgentTrajectoryConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "small_error_mode",
+    "large_error_mode",
+    "terminal_mode",
+    "optional_profile"
+  ],
+  "properties": {
+    "small_error_mode": {
+      "type": "string",
+      "enum": ["direct_feedforward", "linear", "none"],
+      "default": "direct_feedforward"
+    },
+    "large_error_mode": {
+      "type": "string",
+      "enum": ["jerk_limited", "minimum_jerk", "trapezoidal"],
+      "default": "jerk_limited"
+    },
+    "terminal_mode": {
+      "type": "string",
+      "enum": ["critically_damped_pd", "pure_feedforward", "none"],
+      "default": "critically_damped_pd"
+    },
+    "optional_profile": {
+      "type": "string",
+      "enum": ["minimum_jerk", "jerk_limited", "direct_feedforward", "none"],
+      "default": "minimum_jerk"
+    },
+    "small_error_threshold_px": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 500.0,
+      "default": 15.0
+    },
+    "max_velocity_counts_per_s": {
+      "type": "number",
+      "minimum": 100.0,
+      "maximum": 1000000.0,
+      "default": 50000.0
+    },
+    "max_acceleration_counts_per_s2": {
+      "type": "number",
+      "minimum": 1000.0,
+      "maximum": 100000000.0,
+      "default": 500000.0
+    },
+    "max_jerk_counts_per_s3": {
+      "type": "number",
+      "minimum": 10000.0,
+      "maximum": 1000000000.0,
+      "default": 10000000.0
+    },
+    "pd_kp": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "default": 1.0
+    },
+    "pd_kd": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "default": 0.1
+    }
+  }
+}

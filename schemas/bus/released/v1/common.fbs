@@ -1,0 +1,81 @@
+// schemas/bus/common.fbs
+// OpenPrism Canonical Bus - Common Types and Primitives v1
+
+namespace aim.bus.v1;
+
+/// @brief 2D float coordinate or vector
+struct Vec2f {
+  x:float;
+  y:float;
+}
+
+/// @brief 3D float coordinate or vector
+struct Vec3f {
+  x:float;
+  y:float;
+  z:float;
+}
+
+/// @brief Axis-aligned bounding box in pixels
+struct BBoxf {
+  left:float;
+  top:float;
+  right:float;
+  bottom:float;
+}
+
+/// @brief Symmetric 2D covariance matrix in pixel^2
+struct Covariance2f {
+  xx:float;
+  xy:float;
+  yy:float;
+}
+
+/// @brief Target visibility classification
+enum Visibility:ubyte {
+  Visible = 0,
+  Partial = 1,
+  Predicted = 2
+}
+
+/// @brief Coordinate space convention
+enum CoordinateSpace:ubyte {
+  PixelTopLeft = 0,
+  NormalizedCenter = 1,
+  CameraSpherical = 2
+}
+
+/// @brief Mouse button identifier
+enum MouseButton:ubyte {
+  None = 0,
+  Left = 1,
+  Right = 2,
+  Middle = 3,
+  X1 = 4,
+  X2 = 5
+}
+
+/// @brief Mouse button actuation action
+enum ButtonAction:ubyte {
+  None = 0,
+  Press = 1,
+  Release = 2,
+  Click = 3
+}
+
+/// @brief Diagnostic & synthetic correlation flags
+enum CorrelationFlags:uint {
+  None = 0,
+  Synthetic = 1,
+  Warmup = 2,
+  Dropped = 4,
+  TraceVerbose = 8
+}
+
+/// @brief Monotonic correlation header propagated across all pipeline stages
+table CorrelationHeader {
+  sequence_id:ulong;
+  source_timestamp_ns:long;
+  pipeline_run_id:uint;
+  flags:uint = 0;
+}

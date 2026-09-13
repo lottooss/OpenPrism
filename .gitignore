@@ -1,0 +1,66 @@
+# Build systems and IDEs
+/build/
+/build*/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# C/C++ and CUDA outputs
+*.obj
+*.o
+*.lib
+*.dll
+*.exe
+*.pdb
+*.exp
+*.ilk
+*.cubin
+*.ptx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+python/.venv/
+
+# Models, engines, datasets, and recordings
+*.engine
+*.plan
+*.trt
+*.onnx
+*.pt
+*.pth
+/artifacts/
+/datasets/
+/recordings/
+/runs/
+
+# Local telemetry and logs
+*.log
+/telemetry/
+/reports/local/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+configs/local/
+
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

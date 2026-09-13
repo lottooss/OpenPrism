@@ -1,0 +1,12 @@
+# Perception Profile: YOLO11n TensorRT Reference Model
+
+perception:
+  plugin: "yolo11n_aimlabs"
+  precision: "fp16"
+  batch: 1
+  input_width: 640
+  input_height: 384
+  max_targets: 64
+  cuda_graph: true
+  confidence_floor: 0.20
+  nms_iou_threshold: 0.45

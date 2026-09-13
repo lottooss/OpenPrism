@@ -1,0 +1,19 @@
+# Example Windows 1080p capture profile. Validate timings on your own hardware.
+
+capture:
+  backend: "dxgi"
+  fallback: "wgc"
+  source_width: 1920
+  source_height: 1080
+  pixel_format: "bgra8_sdr"
+  buffers: 2
+  latest_only: true
+  stale_after_ms: 12.0
+  display_index: 0
+  allow_cross_adapter_copy: false
+
+runtime:
+  internal_deadline_ms: 10.0
+  target_p99_ms: 6.0
+  warmup_iterations: 200
+  thread_priority: "high"

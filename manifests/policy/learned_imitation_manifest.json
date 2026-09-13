@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "policy_id": "learned_imitation_mlp_v1",
+  "policy_type": "learned_imitation",
+  "version": "1.0.0",
+  "author": "OpenPrism Core Team",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "description": "Neural behavioral cloning imitation policy for target ranking and fire authorization",
+  "contracts": {
+    "input_schema": "bus::TrackedTargetBatch",
+    "output_schema": "bus::AimIntent",
+    "coordinate_system": "pixel_top_left"
+  },
+  "hyperparameters": {
+    "reward_weight_distance": 1.0,
+    "reward_weight_confidence": 2.0,
+    "switch_hysteresis_penalty": 1.5,
+    "fire_authorization_threshold_px": 8.0,
+    "receding_horizon_steps": 4
+  },
+  "safety_bounds": {
+    "max_angular_speed_deg_s": 720.0,
+    "max_pixel_distance_px": 1920.0,
+    "require_confirmed_track": true,
+    "min_engagement_confidence": 0.50
+  }
+}

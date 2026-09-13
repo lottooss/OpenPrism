@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/policy_manifest.schema.json",
+  "title": "AimPolicyManifest",
+  "description": "Schema specification for replaceable aim policy manifests",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy_id",
+    "policy_type",
+    "version",
+    "author",
+    "license",
+    "contracts",
+    "hyperparameters",
+    "safety_bounds"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "policy_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{3,64}$"
+    },
+    "policy_type": {
+      "type": "string",
+      "enum": [
+        "deterministic_utility",
+        "learned_imitation",
+        "learned_rl",
+        "nearest_baseline",
+        "spatial_sweep_baseline"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v?(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_schema", "output_schema", "coordinate_system"],
+      "properties": {
+        "input_schema": {
+          "type": "string",
+          "const": "bus::TrackedTargetBatch"
+        },
+        "output_schema": {
+          "type": "string",
+          "const": "bus::AimIntent"
+        },
+        "coordinate_system": {
+          "type": "string",
+          "enum": ["pixel_top_left", "normalized_symmetric_ndc"]
+        }
+      }
+    },
+    "hyperparameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reward_weight_distance",
+        "reward_weight_confidence",
+        "switch_hysteresis_penalty",
+        "fire_authorization_threshold_px"
+      ],
+      "properties": {
+        "reward_weight_distance": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0
+        },
+        "reward_weight_confidence": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0
+        },
+        "switch_hysteresis_penalty": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0
+        },
+        "fire_authorization_threshold_px": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 100.0
+        },
+        "receding_horizon_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      }
+    },
+    "safety_bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_angular_speed_deg_s",
+        "max_pixel_distance_px",
+        "require_confirmed_track",
+        "min_engagement_confidence"
+      ],
+      "properties": {
+        "max_angular_speed_deg_s": {
+          "type": "number",
+          "minimum": 10.0,
+          "maximum": 2000.0
+        },
+        "max_pixel_distance_px": {
+          "type": "number",
+          "minimum": 10.0,
+          "maximum": 4000.0
+        },
+        "require_confirmed_track": {
+          "type": "boolean"
+        },
+        "min_engagement_confidence": {
+          "type": "number",
+          "minimum": 0.10,
+          "maximum": 1.0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/safety.schema.json",
+  "title": "AimAgentSafetyConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "require_foreground_match",
+    "require_emergency_stop",
+    "fail_closed"
+  ],
+  "properties": {
+    "require_foreground_match": {
+      "type": "boolean",
+      "default": true
+    },
+    "target_process_name": {
+      "type": "string",
+      "default": "Aimlab_tb.exe"
+    },
+    "target_window_title": {
+      "type": "string",
+      "default": "Aimlabs"
+    },
+    "require_emergency_stop": {
+      "type": "boolean",
+      "default": true
+    },
+    "emergency_stop_key": {
+      "type": "string",
+      "default": "F12"
+    },
+    "fail_closed": {
+      "type": "boolean",
+      "default": true
+    },
+    "max_delta_counts_per_dispatch": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000,
+      "default": 500
+    },
+    "max_active_engagement_seconds": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 600.0,
+      "default": 60.0
+    }
+  }
+}

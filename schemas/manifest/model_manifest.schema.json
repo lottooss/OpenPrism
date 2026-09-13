@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/model_manifest.schema.json",
+  "title": "AimAgentModelManifest",
+  "description": "Schema for trained perception models, ONNX/TensorRT exports, evaluation slices, and provenance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "model_id",
+    "model_name",
+    "architecture",
+    "version",
+    "license",
+    "input_tensor",
+    "output_tensor",
+    "dataset_provenance",
+    "training_config",
+    "metrics",
+    "scenario_slices",
+    "model_artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "model_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F-]{36}$"
+    },
+    "model_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "architecture": {
+      "type": "string",
+      "enum": ["yolo11n", "yolo11s", "rt_detr", "custom_cnn"]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "license": {
+      "type": "string",
+      "enum": ["AGPL-3.0", "MIT", "PolyForm-Noncommercial-1.0.0", "Apache-2.0", "Proprietary", "Custom"]
+    },
+    "created_at_utc": {
+      "type": "string"
+    },
+    "git_info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_hash", "branch", "is_dirty"],
+      "properties": {
+        "commit_hash": { "type": "string" },
+        "branch": { "type": "string" },
+        "is_dirty": { "type": "boolean" }
+      }
+    },
+    "input_tensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "shape", "dtype", "color_format", "layout", "normalization"],
+      "properties": {
+        "name": { "type": "string" },
+        "shape": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "dtype": {
+          "type": "string",
+          "enum": ["float32", "float16", "uint8"]
+        },
+        "color_format": {
+          "type": "string",
+          "enum": ["RGB", "BGR", "NV12"]
+        },
+        "layout": {
+          "type": "string",
+          "enum": ["NCHW", "NHWC"]
+        },
+        "normalization": {
+          "type": "string",
+          "enum": ["zero_to_one", "minus_one_to_one", "imagenet_mean_std"]
+        }
+      }
+    },
+    "output_tensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "shape", "dtype", "classes"],
+      "properties": {
+        "name": { "type": "string" },
+        "shape": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "dtype": {
+          "type": "string",
+          "enum": ["float32", "float16"]
+        },
+        "classes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      }
+    },
+    "dataset_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "dataset_name", "dataset_sha256", "train_samples", "val_samples", "test_samples"],
+      "properties": {
+        "dataset_id": { "type": "string", "pattern": "^[0-9a-fA-F-]{36}$" },
+        "dataset_name": { "type": "string" },
+        "dataset_sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "train_samples": { "type": "integer", "minimum": 0 },
+        "val_samples": { "type": "integer", "minimum": 0 },
+        "test_samples": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "training_config": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["epochs", "batch_size", "learning_rate", "optimizer", "seed"],
+      "properties": {
+        "epochs": { "type": "integer", "minimum": 1 },
+        "batch_size": { "type": "integer", "minimum": 1 },
+        "learning_rate": { "type": "number", "minimum": 0.0 },
+        "optimizer": { "type": "string" },
+        "seed": { "type": "integer" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["map50", "map50_95", "precision", "recall", "f1_score", "mean_center_error_px", "expected_calibration_error"],
+      "properties": {
+        "map50": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "map50_95": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "precision": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "recall": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "f1_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "mean_center_error_px": { "type": "number", "minimum": 0.0 },
+        "p95_center_error_px": { "type": "number", "minimum": 0.0 },
+        "max_center_error_px": { "type": "number", "minimum": 0.0 },
+        "expected_calibration_error": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      }
+    },
+    "scenario_slices": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sample_count", "precision", "recall", "f1_score", "mean_center_error_px"],
+        "properties": {
+          "sample_count": { "type": "integer", "minimum": 0 },
+          "precision": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "recall": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "f1_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "mean_center_error_px": { "type": "number", "minimum": 0.0 }
+        }
+      }
+    },
+    "model_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact_type", "path", "sha256", "size_bytes"],
+        "properties": {
+          "artifact_type": {
+            "type": "string",
+            "enum": ["weights_pt", "model_onnx", "engine_trt", "calibration_cache", "failure_gallery"]
+          },
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible defect or regression.
+title: "[BUG] "
+labels:
+  - "bug"
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Include commands, configuration hash, artifact hashes, and relevant environment details.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, traces, or replay fixture
+      description: Remove credentials, personal data, private footage, and machine secrets.
+    validations:
+      required: true
+  - type: dropdown
+    id: safety
+    attributes:
+      label: Safety impact
+      options:
+        - None known
+        - Fail-closed behavior affected
+        - Actuation bounds/focus/freshness affected
+        - Security or private disclosure required
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Reporter checks
+      options:
+        - label: I searched existing issues and regressions.
+          required: true
+        - label: I removed secrets and private data from the report.
+          required: true

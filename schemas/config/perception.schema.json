@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/perception.schema.json",
+  "title": "AimAgentPerceptionConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plugin",
+    "precision",
+    "batch",
+    "input_width",
+    "input_height",
+    "max_targets",
+    "cuda_graph",
+    "confidence_floor"
+  ],
+  "properties": {
+    "plugin": {
+      "type": "string",
+      "default": "yolo11n_aimlabs"
+    },
+    "precision": {
+      "type": "string",
+      "enum": ["fp16", "fp32", "int8"],
+      "default": "fp16"
+    },
+    "batch": {
+      "type": "integer",
+      "const": 1,
+      "default": 1
+    },
+    "input_width": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 3840,
+      "default": 640
+    },
+    "input_height": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 2160,
+      "default": 384
+    },
+    "max_targets": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512,
+      "default": 64
+    },
+    "cuda_graph": {
+      "type": "boolean",
+      "default": true
+    },
+    "confidence_floor": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.20
+    },
+    "nms_iou_threshold": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.45
+    },
+    "model_path": {
+      "type": "string",
+      "default": ""
+    },
+    "model_sha256": {
+      "type": "string",
+      "pattern": "^([a-fA-F0-9]{64})?$",
+      "default": ""
+    }
+  }
+}

@@ -1,0 +1,36 @@
+// schemas/bus/aim_intent.fbs
+// OpenPrism Canonical Bus - Aim Intent v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Aim controller operational mode
+enum AimMode:ubyte {
+  Idle = 0,
+  Tracking = 1,
+  Flick = 2,
+  MicroCorrection = 3,
+  EmergencyHold = 4
+}
+
+/// @brief Aim intent computed by utility policy
+table AimIntent {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  target_track_id:ulong;
+  mode:AimMode = Tracking;
+  target_aim_px:Vec2f;
+  target_aim_norm:Vec2f;
+  lead_offset_px:Vec2f;
+  error_distance_px:float;
+  authorize_fire:bool = false;
+  confidence:float = 1.0;
+  utility_score:float = 1.0;
+  command_deadline_ns:long;
+}
+
+root_type AimIntent;
+file_identifier "AAI1";
+file_extension "aai";

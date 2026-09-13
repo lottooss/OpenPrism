@@ -1,0 +1,145 @@
+name: Repository checks
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate required project files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'README.md',
+            'LICENSE',
+            'docs/ARCHITECTURE.md',
+            'vcpkg.json',
+            'python/pyproject.toml'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required repository file is missing: $path"
+            }
+          }
+          Get-Content -Raw -LiteralPath 'vcpkg.json' | ConvertFrom-Json | Out-Null
+          git diff --check
+
+      - name: Set up MSVC environment
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12.4"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: "python/uv.lock"
+
+      - name: Set up pinned vcpkg
+        if: ${{ hashFiles('vcpkg.json') != '' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP 'vcpkg'
+          git clone --filter=blob:none --no-checkout https://github.com/microsoft/vcpkg.git $vcpkgRoot
+          git -C $vcpkgRoot fetch --depth 1 origin 127402f1c75bb3d5ff6bce04b285faa4930a5aca
+          git -C $vcpkgRoot checkout --detach FETCH_HEAD
+          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat') -disableMetrics
+          "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+
+      - name: Sync locked Python environment
+        if: ${{ hashFiles('python/pyproject.toml') != '' }}
+        shell: pwsh
+        run: |
+          uv lock --check --project python
+          uv sync --frozen --project python
+
+      - name: Configure CMake when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: cmake --preset windows-msvc-debug
+
+      - name: Verify generated FlatBuffers contracts
+        shell: pwsh
+        run: |
+          $flatc = Join-Path $PWD 'build/vcpkg_installed/x64-windows/tools/flatbuffers/flatc.exe'
+          ./scripts/generate-bus-bindings.ps1 -Flatc $flatc -Check
+          ./scripts/check-bus-schema-conformance.ps1 -Flatc $flatc
+
+      - name: Build C++ when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: cmake --build --preset windows-msvc-debug
+
+      - name: Test C++ when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: ctest --preset windows-msvc-debug --output-on-failure
+
+      - name: Configure CMake release when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: cmake --preset windows-msvc-release
+
+      - name: Build C++ release when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: cmake --build --preset windows-msvc-release
+
+      # Release was previously built but never tested, so any defect that only shows up
+      # under optimization -- elided assertions, reordered non-atomic stores, UB the
+      # optimizer exploits -- would have shipped with a green tick.
+      - name: Test C++ release when available
+        if: ${{ hashFiles('CMakeLists.txt') != '' }}
+        shell: pwsh
+        run: ctest --preset windows-msvc-release --output-on-failure
+
+      - name: Run Python tests when available
+        if: ${{ hashFiles('tests/*.py') != '' }}
+        shell: pwsh
+        run: uv run --project python pytest
+
+      - name: Lint Python when available
+        if: ${{ hashFiles('python/pyproject.toml') != '' }}
+        shell: pwsh
+        run: uv run --project python ruff check python tools tests
+
+      - name: Type-check Python when available
+        if: ${{ hashFiles('python/pyproject.toml') != '' }}
+        shell: pwsh
+        run: uv run --project python mypy python/aim tools
+
+      - name: Validate Python syntax when available
+        if: ${{ hashFiles('python/pyproject.toml') != '' }}
+        shell: pwsh
+        run: uv run --project python python -m compileall -q python/aim tools tests

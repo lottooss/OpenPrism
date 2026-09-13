@@ -1,0 +1,9 @@
+# Actuator Profile: NullActuator for Deterministic Testing & CI
+
+actuator:
+  backend: "null"
+  scheduler_hz: 1000
+  relative_counts: true
+  cancel_superseded: true
+  counts_per_pixel_x: 1.0
+  counts_per_pixel_y: 1.0

@@ -1,0 +1,47 @@
+# Scenario Profile: Aimlabs (thin, capability-gated benchmark profile)
+#
+# "Aimlabs" exists in this repository only as the values in this file. No C++
+# type, tracker, aim policy, planner, or actuator knows this domain exists.
+#
+# Every value here is either static configuration or observable through ordinary
+# OS foreground-window queries. Nothing is read out of the game: no process
+# memory is inspected, no code is injected, and no score, recoil, weapon, or
+# movement state is consumed. Validated by
+# schemas/config/scenario_profile.schema.json.
+
+schema_version: 1
+profile_id: "aimlabs_gridshot"
+default_target_value: 1.0
+max_engagement_seconds: 60.0
+
+capabilities:
+  provides_target_value: true
+  provides_crosshair_context: true
+  provides_calibration_seed: true
+  provides_foreground_identity: true
+  reports_scenario_completion: true
+
+# Authorization data only. The host performs the OS foreground query and passes
+# the observed strings back in through ObservableScenarioState; the adapter never
+# enumerates processes itself.
+foreground:
+  process_name: "Aimlab_tb.exe"
+  window_title_substring: "aimlab"
+  require_match: true
+
+# A starting hint for the online calibrator (M6-04) only. It never replaces a
+# measured calibration profile.
+calibration_seed:
+  counts_per_pixel_x: 1.25
+  counts_per_pixel_y: 1.25
+  fov_horizontal_deg: 103.0
+  in_game_sensitivity: 1.0
+  valid: true
+
+# Centre of the 1920x1080 capture region.
+crosshair:
+  center_norm_x: 0.0
+  center_norm_y: 0.0
+  center_px_x: 960.0
+  center_px_y: 540.0
+  valid: true

@@ -1,0 +1,88 @@
+# Base Layer Configuration for OpenPrism
+schema_version: 1
+
+runtime:
+  internal_deadline_ms: 10.0
+  target_p99_ms: 6.0
+  warmup_iterations: 200
+  allocation_audit: true
+  thread_priority: "high"
+  cpu_affinity_mask: 0
+
+capture:
+  backend: "dxgi"
+  fallback: "wgc"
+  source_width: 1920
+  source_height: 1080
+  pixel_format: "bgra8_sdr"
+  buffers: 2
+  latest_only: true
+  stale_after_ms: 12.0
+  display_index: 0
+  allow_cross_adapter_copy: false
+
+perception:
+  plugin: "yolo11n_aimlabs"
+  precision: "fp16"
+  batch: 1
+  input_width: 640
+  input_height: 384
+  max_targets: 64
+  cuda_graph: true
+  confidence_floor: 0.20
+  nms_iou_threshold: 0.45
+  model_path: ""
+  model_sha256: ""
+
+tracking:
+  models:
+    - "stationary"
+    - "constant_velocity"
+    - "constant_acceleration"
+  association: "hungarian"
+  max_missed_frames: 3
+  immediate_confidence: 0.85
+  require_second_observation_below: 0.85
+  engage_if_uncertainty_within_radius: true
+  process_noise_scale: 1.0
+  measurement_noise_scale: 1.0
+  gating_threshold_chi2: 9.21
+
+policy:
+  plugin: "deterministic_utility"
+  objective: "raw_score"
+  horizon_targets: 3
+  switch_hysteresis: 0.08
+  target_lead_time_ms: 0.0
+
+trajectory:
+  small_error_mode: "direct_feedforward"
+  large_error_mode: "jerk_limited"
+  terminal_mode: "critically_damped_pd"
+  optional_profile: "minimum_jerk"
+  small_error_threshold_px: 15.0
+  max_velocity_counts_per_s: 50000.0
+  max_acceleration_counts_per_s2: 500000.0
+  max_jerk_counts_per_s3: 10000000.0
+  pd_kp: 1.0
+  pd_kd: 0.1
+
+actuator:
+  backend: "sendinput"
+  scheduler_hz: 1000
+  relative_counts: true
+  cancel_superseded: true
+  counts_per_pixel_x: 1.0
+  counts_per_pixel_y: 1.0
+  hid_com_port: ""
+  hid_baud_rate: 115200
+
+safety:
+  require_foreground_match: true
+  target_process_name: "Aimlab_tb.exe"
+  target_window_title: "Aimlabs"
+  require_emergency_stop: true
+  emergency_stop_key: "F12"
+  fail_closed: true
+  max_delta_counts_per_dispatch: 500
+  max_active_engagement_seconds: 60.0

@@ -1,0 +1,15 @@
+# Domain Profile: Tactical Second Domain (Humanoid Target Benchmark)
+
+safety:
+  require_foreground_match: true
+  target_process_name: "tactical_sim.exe"
+  target_window_title: "Tactical Domain"
+  require_emergency_stop: true
+  fail_closed: true
+  max_active_engagement_seconds: 90.0
+
+policy:
+  plugin: "deterministic_utility"
+  objective: "raw_score"
+  horizon_targets: 3
+  switch_hysteresis: 0.08

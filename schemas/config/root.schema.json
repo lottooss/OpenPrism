@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/root.schema.json",
+  "title": "AimAgentRootConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "runtime",
+    "capture",
+    "perception",
+    "tracking",
+    "policy",
+    "trajectory",
+    "actuator",
+    "safety"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "runtime": { "$ref": "runtime.schema.json" },
+    "capture": { "$ref": "capture.schema.json" },
+    "perception": { "$ref": "perception.schema.json" },
+    "tracking": { "$ref": "tracker.schema.json" },
+    "policy": { "$ref": "policy.schema.json" },
+    "trajectory": { "$ref": "trajectory.schema.json" },
+    "actuator": { "$ref": "actuator.schema.json" },
+    "safety": { "$ref": "safety.schema.json" }
+  }
+}

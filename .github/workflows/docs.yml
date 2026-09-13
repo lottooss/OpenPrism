@@ -1,0 +1,58 @@
+name: Documentation checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: documentation-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-docs:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate documentation and repository metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'README.md',
+            'LICENSE',
+            'docs/ARCHITECTURE.md',
+            'vcpkg.json',
+            'python/pyproject.toml'
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required repository file is missing: $path"
+            }
+          }
+
+          Get-Content -Raw -LiteralPath 'vcpkg.json' |
+            ConvertFrom-Json | Out-Null
+
+          $absoluteLinks = Get-ChildItem -Recurse -File -Filter '*.md' |
+            Select-String -SimpleMatch 'file:///'
+          if ($absoluteLinks) {
+            $absoluteLinks | ForEach-Object { Write-Error $_.ToString() }
+            throw 'Machine-specific file:/// links are not allowed in repository Markdown.'
+          }
+
+          git diff --check

@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/recording_session.schema.json",
+  "title": "AimAgentRecordingSessionManifest",
+  "description": "Schema for lossless recording sessions, visual profiles, frame indexing, and offline metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "scenario_name",
+    "task_type",
+    "visual_profile",
+    "source",
+    "storage",
+    "statistics",
+    "frames"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F-]{36}$"
+    },
+    "scenario_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["flick", "tracking", "switching", "synthetic", "calibration", "custom"]
+    },
+    "visual_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notes": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolution_width",
+        "resolution_height",
+        "target_fps",
+        "color_format",
+        "capture_backend"
+      ],
+      "properties": {
+        "resolution_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resolution_height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "target_fps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "color_format": {
+          "type": "string",
+          "enum": ["b8g8r8a8_unorm", "r8g8b8a8_unorm", "nv12", "rgb8", "fp16_planar"]
+        },
+        "adapter_luid": {
+          "type": "string"
+        },
+        "capture_backend": {
+          "type": "string",
+          "enum": ["dxgi_duplication", "windows_graphics_capture", "synthetic", "replay", "custom"]
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recording_dir",
+        "format",
+        "data_retention_days"
+      ],
+      "properties": {
+        "recording_dir": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["raw_binary", "png_frames", "mp4_lossless", "tar_lz4", "metadata_only"]
+        },
+        "data_retention_days": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_timestamp_utc",
+        "end_timestamp_utc",
+        "start_time_ns",
+        "end_time_ns",
+        "duration_ms",
+        "total_frames_captured",
+        "total_frames_recorded",
+        "total_frames_dropped",
+        "total_bytes"
+      ],
+      "properties": {
+        "start_timestamp_utc": {
+          "type": "string"
+        },
+        "end_timestamp_utc": {
+          "type": "string"
+        },
+        "start_time_ns": {
+          "type": "integer"
+        },
+        "end_time_ns": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_frames_captured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_frames_recorded": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_frames_dropped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sample_id",
+          "frame_sequence_id",
+          "timestamp_ns",
+          "relative_path",
+          "sha256",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "sample_id": {
+            "type": "string"
+          },
+          "frame_sequence_id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "timestamp_ns": {
+            "type": "integer"
+          },
+          "relative_path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "correlation_id": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sequence_id", "source_timestamp_ns", "pipeline_run_id", "flags"],
+            "properties": {
+              "sequence_id": { "type": "integer" },
+              "source_timestamp_ns": { "type": "integer" },
+              "pipeline_run_id": { "type": "integer" },
+              "flags": { "type": "integer" }
+            }
+          },
+          "label_path": {
+            "type": "string"
+          },
+          "label_sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "is_annotated": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

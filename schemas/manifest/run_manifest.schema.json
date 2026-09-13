@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/run_manifest.schema.json",
+  "title": "AimAgentRunManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "timestamp_utc",
+    "git_info",
+    "environment",
+    "config",
+    "schemas",
+    "artifacts",
+    "execution"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F-]{36}$"
+    },
+    "timestamp_utc": {
+      "type": "string"
+    },
+    "git_info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_hash", "branch", "is_dirty"],
+      "properties": {
+        "commit_hash": { "type": "string" },
+        "branch": { "type": "string" },
+        "is_dirty": { "type": "boolean" },
+        "describe": { "type": "string" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_layers", "config_sha256", "resolved_config"],
+      "properties": {
+        "source_layers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "resolved_config": {
+          "type": "object"
+        }
+      }
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-fA-F0-9]{64}$"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "sha256", "size_bytes"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "type": {
+            "type": "string",
+            "enum": ["model_onnx", "model_engine", "plugin_dll", "binary", "dataset", "config", "other"]
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "internal_deadline_ms", "target_p99_ms"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["simulation", "benchmark", "live", "replay", "probe"]
+        },
+        "internal_deadline_ms": { "type": "number" },
+        "target_p99_ms": { "type": "number" },
+        "warmup_iterations_completed": { "type": "integer", "minimum": 0 },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

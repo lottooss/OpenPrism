@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/calibration_profile.schema.json",
+  "title": "AimCalibrationProfile",
+  "description": "Schema specification for counts-to-pixels mouse calibration profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "calibrated_at",
+    "resolution_width",
+    "resolution_height",
+    "fov_horizontal_deg",
+    "in_game_sensitivity",
+    "counts_per_pixel_x",
+    "counts_per_pixel_y",
+    "deadband_counts",
+    "nonlinearity_alpha",
+    "cross_coupling_xy",
+    "rmse_pixels"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{3,64}$"
+    },
+    "calibrated_at": {
+      "type": "string"
+    },
+    "resolution_width": {
+      "type": "integer",
+      "minimum": 320,
+      "maximum": 7680
+    },
+    "resolution_height": {
+      "type": "integer",
+      "minimum": 240,
+      "maximum": 4320
+    },
+    "fov_horizontal_deg": {
+      "type": "number",
+      "minimum": 30.0,
+      "maximum": 150.0
+    },
+    "in_game_sensitivity": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 100.0
+    },
+    "counts_per_pixel_x": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 100.0
+    },
+    "counts_per_pixel_y": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 100.0
+    },
+    "deadband_counts": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 10.0
+    },
+    "nonlinearity_alpha": {
+      "type": "number",
+      "minimum": -1.0,
+      "maximum": 1.0
+    },
+    "cross_coupling_xy": {
+      "type": "number",
+      "minimum": -0.5,
+      "maximum": 0.5
+    },
+    "rmse_pixels": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 50.0
+    }
+  }
+}

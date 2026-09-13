@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/actuator.schema.json",
+  "title": "AimAgentActuatorConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "backend",
+    "scheduler_hz",
+    "relative_counts",
+    "cancel_superseded"
+  ],
+  "properties": {
+    "backend": {
+      "type": "string",
+      "enum": ["sendinput", "usb_hid", "null"],
+      "default": "sendinput"
+    },
+    "scheduler_hz": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 8000,
+      "default": 1000
+    },
+    "relative_counts": {
+      "type": "boolean",
+      "default": true
+    },
+    "cancel_superseded": {
+      "type": "boolean",
+      "default": true
+    },
+    "counts_per_pixel_x": {
+      "type": "number",
+      "minimum": 0.0001,
+      "maximum": 100.0,
+      "default": 1.0
+    },
+    "counts_per_pixel_y": {
+      "type": "number",
+      "minimum": 0.0001,
+      "maximum": 100.0,
+      "default": 1.0
+    },
+    "hid_com_port": {
+      "type": "string",
+      "default": ""
+    },
+    "hid_baud_rate": {
+      "type": "integer",
+      "minimum": 9600,
+      "maximum": 2000000,
+      "default": 115200
+    }
+  }
+}

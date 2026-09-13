@@ -1,0 +1,48 @@
+# Scenario Profile: Generic Targets (domain-neutral baseline)
+#
+# The reusable core must run with this profile alone. It advertises no crosshair,
+# calibration, or completion capability, so every consumer falls back to its own
+# safe default. Validated by schemas/config/scenario_profile.schema.json.
+
+schema_version: 1
+profile_id: "generic_targets"
+default_target_value: 1.0
+max_engagement_seconds: 0.0
+
+capabilities:
+  provides_target_value: true
+  provides_crosshair_context: false
+  provides_calibration_seed: false
+  # Advertised so the "intentionally unconstrained" choice below is visible to
+  # consumers instead of being silently replaced by the fail-closed default.
+  provides_foreground_identity: true
+  reports_scenario_completion: false
+
+# Intentionally unconstrained: this profile constrains no specific application and
+# is for offline replay and portability runs only. It must never drive live
+# actuation against a real application - use a profile with a real process_name.
+#
+# What this does NOT relax: foreground_authorized() still requires the host's own
+# focus confirmation, so an unfocused desktop is never authorized. What it DOES
+# relax is which application may be targeted, which is why it is replay-only.
+# Note that SafetySupervisor's focus gate is only active when the host installs a
+# focus callback (see config_.require_foreground && focus_check_ in
+# src/safety/safety_supervisor.cpp); it is not an automatic backstop.
+foreground:
+  process_name: ""
+  window_title_substring: ""
+  require_match: false
+
+calibration_seed:
+  counts_per_pixel_x: 0.0
+  counts_per_pixel_y: 0.0
+  fov_horizontal_deg: 0.0
+  in_game_sensitivity: 0.0
+  valid: false
+
+crosshair:
+  center_norm_x: 0.0
+  center_norm_y: 0.0
+  center_px_x: 960.0
+  center_px_y: 540.0
+  valid: false

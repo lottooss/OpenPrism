@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/runtime.schema.json",
+  "title": "AimAgentRuntimeConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "internal_deadline_ms",
+    "target_p99_ms",
+    "warmup_iterations",
+    "allocation_audit"
+  ],
+  "properties": {
+    "internal_deadline_ms": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 100.0,
+      "default": 10.0
+    },
+    "target_p99_ms": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 50.0,
+      "default": 6.0
+    },
+    "warmup_iterations": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 200
+    },
+    "allocation_audit": {
+      "type": "boolean",
+      "default": true
+    },
+    "thread_priority": {
+      "type": "string",
+      "enum": ["normal", "above_normal", "high"],
+      "default": "high"
+    },
+    "cpu_affinity_mask": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    }
+  }
+}

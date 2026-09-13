@@ -1,0 +1,15 @@
+{
+  "date": "2026-09-13",
+  "runtime_duration_seconds": 45,
+  "game_hits": 16,
+  "game_shots": 16,
+  "game_accuracy_percent": 100,
+  "game_score": 3024,
+  "frames_processed": 1197,
+  "accepted_commands": 1050,
+  "accepted_shots": 16,
+  "actuator_dispatch_failures": 0,
+  "engine_sha256": "5743f4bce1da0ccb2145b6618e65515b9b2acc1aeadf8a919d8efdd71c383dc7",
+  "video_speed": 1,
+  "recording_concurrent": true
+}

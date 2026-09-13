@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/manifest/plugin_manifest.schema.json",
+  "title": "AimPluginManifest",
+  "description": "Strict specification for OpenPrism dynamic native plugin manifests",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "version",
+    "abi_version",
+    "kind",
+    "author",
+    "license",
+    "entry_point",
+    "checksum",
+    "contracts",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{3,64}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^v?(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "abi_version": {
+      "type": "integer",
+      "minimum": 65536,
+      "maximum": 4294967295
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["perception", "policy", "tracker", "tracking", "trajectory", "scenario", "actuator"]
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "entry_point": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+\\.(dll|so|dylib)$"
+    },
+    "checksum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "size_bytes"],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_schema", "output_schema"],
+      "properties": {
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["identifier", "major_min", "major_max"],
+          "properties": {
+            "identifier": {
+              "type": "string",
+              "enum": ["AFR1", "AOB1", "ATT1", "AAI1", "AAC1", "ATE1", "NONE"]
+            },
+            "major_min": { "type": "integer", "minimum": 1 },
+            "major_max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["identifier", "major_min", "major_max"],
+          "properties": {
+            "identifier": {
+              "type": "string",
+              "enum": ["AFR1", "AOB1", "ATT1", "AAI1", "AAC1", "ATE1", "NONE"]
+            },
+            "major_min": { "type": "integer", "minimum": 1 },
+            "major_max": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "bounding_box",
+          "velocity_hint",
+          "covariance_estimate",
+          "gpu_direct",
+          "cuda_graph",
+          "fp16_inference",
+          "int8_inference",
+          "multi_class",
+          "confidence_calibrated",
+          "trajectory_emission",
+          "emergency_stop_capable"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "sha256", "framework", "precision"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+          "framework": {
+            "type": "string",
+            "enum": ["tensorrt", "onnx", "torchscript", "custom"]
+          },
+          "precision": {
+            "type": "string",
+            "enum": ["fp16", "fp32", "int8"]
+          },
+          "compute_capability": {
+            "type": "string",
+            "pattern": "^sm_[0-9]{2}$"
+          },
+          "input_dimensions": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 4,
+            "maxItems": 4
+          }
+        }
+      }
+    },
+    "resource_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_latency_budget_ns", "max_output_buffer_bytes"],
+      "properties": {
+        "max_latency_budget_ns": {
+          "type": "integer",
+          "minimum": 100000,
+          "maximum": 50000000
+        },
+        "max_output_buffer_bytes": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 16777216
+        },
+        "gpu_vram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requires_cuda": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

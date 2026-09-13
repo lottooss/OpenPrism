@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/observation_source.schema.json",
+  "title": "AimAgentObservationSourceConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_type",
+    "shm_name",
+    "max_heartbeat_age_ms",
+    "require_heartbeat",
+    "validate_schema"
+  ],
+  "properties": {
+    "source_type": {
+      "type": "string",
+      "enum": ["internal_perception", "shared_memory", "mock", "replay"],
+      "default": "shared_memory"
+    },
+    "shm_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "default": "aim_target_observations_shm"
+    },
+    "max_heartbeat_age_ms": {
+      "type": "number",
+      "minimum": 1.0,
+      "maximum": 5000.0,
+      "default": 50.0
+    },
+    "require_heartbeat": {
+      "type": "boolean",
+      "default": true
+    },
+    "validate_schema": {
+      "type": "boolean",
+      "default": true
+    },
+    "expected_pipeline_run_id": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    }
+  }
+}

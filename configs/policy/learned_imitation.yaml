@@ -1,0 +1,9 @@
+# Policy Profile: Replaceable Learned Imitation Policy
+# Milestone M9-04: Neural behavioral cloning candidate policy
+
+policy:
+  plugin: "learned_imitation"
+  objective: "raw_score"
+  horizon_targets: 3
+  switch_hysteresis: 0.08
+  target_lead_time_ms: 0.0

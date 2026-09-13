@@ -1,0 +1,42 @@
+// schemas/bus/telemetry_event.fbs
+// OpenPrism Canonical Bus - Telemetry Event v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Pipeline stage enumeration for telemetry
+enum PipelineStageCode:ubyte {
+  CaptureArrival = 0,
+  Preprocess = 1,
+  PerceptionInfer = 2,
+  TrackingKalman = 3,
+  AimPolicyPredict = 4,
+  TrajectoryPlan = 5,
+  ActuationDispatch = 6
+}
+
+/// @brief Stage timing event
+table StageTiming {
+  stage:PipelineStageCode;
+  start_ns:long;
+  end_ns:long;
+  duration_ns:long;
+}
+
+/// @brief End-to-end hot loop execution telemetry event
+table HotLoopTelemetryEvent {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  capture_arrival_ns:long;
+  actuation_dispatch_ns:long;
+  total_latency_ns:long;
+  is_stale_dropped:bool = false;
+  queue_depth:uint = 0;
+  stages:[StageTiming];
+}
+
+root_type HotLoopTelemetryEvent;
+file_identifier "ATE1";
+file_extension "ate";

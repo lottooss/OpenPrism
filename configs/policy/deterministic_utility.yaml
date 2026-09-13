@@ -1,0 +1,8 @@
+# Policy Profile: Deterministic Raw-Score Utility Aim Policy
+
+policy:
+  plugin: "deterministic_utility"
+  objective: "raw_score"
+  horizon_targets: 3
+  switch_hysteresis: 0.08
+  target_lead_time_ms: 0.0

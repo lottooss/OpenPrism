@@ -1,0 +1,35 @@
+// schemas/bus/frame_descriptor.fbs
+// OpenPrism Canonical Bus - Frame Descriptor v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Captured frame pixel format
+enum FramePixelFormat:ubyte {
+  Unknown = 0,
+  B8G8R8A8_UNORM = 1,
+  R8G8B8A8_UNORM = 2,
+  R16G16B16A16_FLOAT = 3,
+  NV12 = 4
+}
+
+/// @brief GPU/Shared memory frame lease descriptor
+table FrameDescriptor {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  frame_id:ulong;
+  captured_at_ns:long;
+  width:uint = 1920;
+  height:uint = 1080;
+  format:FramePixelFormat = B8G8R8A8_UNORM;
+  pool_slot_index:uint = 0;
+  shared_nt_handle:ulong = 0;
+  adapter_luid:ulong = 0;
+  is_keyframe:bool = true;
+}
+
+root_type FrameDescriptor;
+file_identifier "AFR1";
+file_extension "afr";

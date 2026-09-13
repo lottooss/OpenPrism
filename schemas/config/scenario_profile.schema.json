@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aimlabs.research/schemas/config/scenario_profile.schema.json",
+  "title": "AimAgentScenarioProfile",
+  "description": "Domain-neutral scenario profile. Carries only a generic target value, crosshair and calibration seeds, capability flags, and an authorized foreground identity. It never encodes game-specific semantics and is never a mandatory dependency of perception, tracking, or aiming.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version of this profile document. Bumped only by an approved migration."
+    },
+    "profile_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "description": "Stable identifier recorded in run manifests."
+    },
+    "default_target_value": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "default": 1.0,
+      "description": "Uniform generic reward weight stamped onto every observation by enrich()."
+    },
+    "max_engagement_seconds": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 600.0,
+      "default": 0.0,
+      "description": "Wall-clock engagement window. 0 means the adapter imposes no cap."
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every flag defaults to false. A consumer must treat an un-advertised capability as unavailable and use its own safe default.",
+      "properties": {
+        "provides_target_value": {
+          "type": "boolean",
+          "default": false
+        },
+        "provides_crosshair_context": {
+          "type": "boolean",
+          "default": false
+        },
+        "provides_calibration_seed": {
+          "type": "boolean",
+          "default": false
+        },
+        "provides_foreground_identity": {
+          "type": "boolean",
+          "default": false
+        },
+        "reports_scenario_completion": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "foreground": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Authorization configuration only. The host performs the OS foreground query; the adapter never enumerates processes and never inspects another process' memory.",
+      "properties": {
+        "process_name": {
+          "type": "string",
+          "maxLength": 260,
+          "default": "",
+          "description": "Exact executable name. Empty means unspecified."
+        },
+        "window_title_substring": {
+          "type": "string",
+          "maxLength": 260,
+          "default": "",
+          "description": "Case-insensitive window-title substring. Empty means unspecified."
+        },
+        "require_match": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true an unconfirmed identity fails closed."
+        }
+      }
+    },
+    "calibration_seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A starting hint for the online calibrator. Never replaces a measured calibration.",
+      "properties": {
+        "counts_per_pixel_x": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1000.0,
+          "default": 0.0
+        },
+        "counts_per_pixel_y": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1000.0,
+          "default": 0.0
+        },
+        "fov_horizontal_deg": {
+          "type": "number",
+          "minimum": 0.0,
+          "exclusiveMaximum": 180.0,
+          "default": 0.0
+        },
+        "in_game_sensitivity": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 100.0,
+          "default": 0.0
+        },
+        "valid": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true every seed value must be strictly positive and in range."
+        }
+      }
+    },
+    "crosshair": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Screen-space crosshair seed handed to the aim policy.",
+      "properties": {
+        "center_norm_x": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0,
+          "default": 0.0
+        },
+        "center_norm_y": {
+          "type": "number",
+          "minimum": -1.0,
+          "maximum": 1.0,
+          "default": 0.0
+        },
+        "center_px_x": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 7680.0,
+          "default": 960.0
+        },
+        "center_px_y": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 4320.0,
+          "default": 540.0
+        },
+        "valid": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

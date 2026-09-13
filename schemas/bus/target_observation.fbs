@@ -1,0 +1,47 @@
+// schemas/bus/target_observation.fbs
+// OpenPrism Canonical Bus - Target Observation v1
+
+include "common.fbs";
+
+namespace aim.bus.v1;
+
+/// @brief Optical flow / model velocity hint
+table VelocityHint {
+  pixels_per_second:Vec2f;
+  confidence:float = 0.0;
+}
+
+/// @brief Canonical visual target observation from perception
+table TargetObservation {
+  source_id:ulong;
+  frame_id:ulong;
+  captured_at_ns:long;
+  center_px:Vec2f;
+  center_norm:Vec2f;
+  bbox_px:BBoxf;
+  effective_radius_px:float;
+  confidence:float;
+  covariance_px2:Covariance2f;
+  velocity:VelocityHint;
+  visibility:Visibility = Visible;
+  target_value:float = 1.0;
+  semantic_id:uint = 0;
+}
+
+/// @brief Batch of canonical target observations for a single frame
+table TargetObservationBatch {
+  schema_major:ushort = 1;
+  schema_minor:ushort = 0;
+  header:CorrelationHeader;
+  source_id:ulong;
+  frame_id:ulong;
+  captured_at_ns:long;
+  published_at_ns:long;
+  source_width:uint = 1920;
+  source_height:uint = 1080;
+  targets:[TargetObservation];
+}
+
+root_type TargetObservationBatch;
+file_identifier "AOB1";
+file_extension "aob";
