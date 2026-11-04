@@ -4,11 +4,14 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
+#include <utility>
 #include <vector>
 
 #include "aim/bus/bus_traits.hpp"
 #include "aim/core/types.hpp"
 #include "aim/tracking/track_lifecycle.hpp"
+#include "aim/tracking/tracking_engine.hpp"
 
 using namespace aim;
 using namespace aim::tracking;
@@ -286,6 +289,170 @@ void test_multi_target_crossing_identity_preservation() {
     std::cout << "  -> Multi-target crossing passed." << std::endl;
 }
 
+const TrackEntry* first_active(const MultiTargetTracker& tracker) {
+    for (const auto& trk : tracker.tracks()) {
+        if (trk.is_active) return &trk;
+    }
+    return nullptr;
+}
+
+void test_kalman_config_reaches_filters() {
+    std::cout << "[Test 8] Configured Kalman noise reaches every track filter..." << std::endl;
+
+    // Each slot's filter used to be default-constructed, so kalman_config never took effect.
+    // One coasted 10 ms frame: position variance grows by q_pos * dt and velocity variance by
+    // q_vel * dt, so the configured values must show up in the filter's covariance.
+    const auto coasted_covariance = [](const KalmanFilterConfig& kalman, bool reset_first) {
+        tracking::TrackerConfig cfg{};
+        cfg.kalman_config = kalman;
+        MultiTargetTracker tracker{cfg};
+        if (reset_first) tracker.reset(); // reset() must keep the configured filters
+        bus::TargetObservationBatch batch{};
+        batch.add_target(make_obs(100.0f, 100.0f, 15.0f, 0.95f));
+        bus::TrackedTargetBatch out{};
+        tracker.process(batch, 1'000'000'000LL, 1'000'000'000LL, out);
+        bus::TargetObservationBatch empty{};
+        tracker.process(empty, 1'010'000'000LL, 1'010'000'000LL, out);
+        const TrackEntry* trk = first_active(tracker);
+        TEST_ASSERT(trk != nullptr);
+        return std::make_pair(trk->filter.position_covariance().xx, trk->filter.velocity_covariance().xx);
+    };
+
+    KalmanFilterConfig low{};
+    low.q_pos = 1.0f;
+    low.q_vel = 1.0f;
+    KalmanFilterConfig high{};
+    high.q_pos = 1000.0f;
+    high.q_vel = 100000.0f;
+
+    const auto low_cov = coasted_covariance(low, false);
+    const auto high_cov = coasted_covariance(high, false);
+    TEST_ASSERT(high_cov.first > low_cov.first + 5.0f);    // ~10 px^2 apart
+    TEST_ASSERT(high_cov.second > low_cov.second + 500.0f); // ~1000 (px/s)^2 apart
+
+    const auto high_after_reset = coasted_covariance(high, true);
+    TEST_ASSERT(std::abs(high_after_reset.first - high_cov.first) < 1e-3f);
+    TEST_ASSERT(std::abs(high_after_reset.second - high_cov.second) < 1e-1f);
+
+    std::cout << "  -> Kalman configuration plumbing passed." << std::endl;
+}
+
+void test_engine_maps_confidence_thresholds() {
+    std::cout << "[Test 9] Interface confidence settings map to the intended thresholds..." << std::endl;
+
+    // aim::TrackerConfig::min_init_confidence (0.7) used to be written into
+    // immediate_confirm_confidence, so a single 0.7-0.85 detection was confirmed on the frame it
+    // first appeared (see test_firing_regressions.cpp for the shot-gate consequence).
+    TrackingEngine engine;
+    TEST_ASSERT(engine.initialize(aim::TrackerConfig{}));
+    MonotonicNs t = 1'000'000'000LL;
+    bus::TrackedTargetBatch out{};
+
+    const auto frame = [&](float confidence, float x) {
+        bus::TargetObservationBatch batch{};
+        batch.captured_at_ns = t;
+        batch.add_target(make_obs(x, 500.0f, 15.0f, confidence));
+        TEST_ASSERT(engine.update(batch, t, out));
+        t += 7'000'000LL;
+    };
+
+    // 0.75: tentative on the first frame, confirmed by a second consecutive observation.
+    frame(0.75f, 500.0f);
+    TEST_ASSERT(out.track_count == 1);
+    TEST_ASSERT(out.tracks[0].state == TrackState::tentative);
+    frame(0.75f, 500.0f);
+    TEST_ASSERT(out.track_count == 1);
+    TEST_ASSERT(out.tracks[0].state == TrackState::confirmed);
+
+    // 0.90: at or above tracker.schema.json's immediate_confidence (0.85), confirmed at once.
+    engine.reset();
+    frame(0.90f, 500.0f);
+    TEST_ASSERT(out.track_count == 1);
+    TEST_ASSERT(out.tracks[0].state == TrackState::confirmed);
+
+    // 0.50: below min_init_confidence, so no track is started.
+    engine.reset();
+    frame(0.50f, 500.0f);
+    TEST_ASSERT(out.track_count == 0);
+
+    // The floor only gates initialization: a low-confidence detection still updates a track.
+    engine.reset();
+    frame(0.95f, 500.0f);
+    frame(0.50f, 501.0f);
+    TEST_ASSERT(out.track_count == 1);
+    TEST_ASSERT(out.tracks[0].total_visible_frames == 2);
+
+    std::cout << "  -> Confidence threshold mapping passed." << std::endl;
+}
+
+void test_engine_noise_settings_and_validation() {
+    std::cout << "[Test 10] Interface noise settings reach the filter; bad settings fail closed..." << std::endl;
+
+    const auto coasted_velocity_variance = [](float velocity_noise) {
+        aim::TrackerConfig cfg{};
+        cfg.velocity_process_noise = velocity_noise;
+        TrackingEngine engine;
+        TEST_ASSERT(engine.initialize(cfg));
+        bus::TargetObservationBatch batch{};
+        batch.captured_at_ns = 1'000'000'000LL;
+        batch.add_target(make_obs(300.0f, 300.0f, 15.0f, 0.95f));
+        bus::TrackedTargetBatch out{};
+        TEST_ASSERT(engine.update(batch, batch.captured_at_ns, out));
+        bus::TargetObservationBatch empty{};
+        empty.captured_at_ns = 1'010'000'000LL;
+        TEST_ASSERT(engine.update(empty, empty.captured_at_ns, out));
+        const TrackEntry* trk = first_active(engine.inner());
+        TEST_ASSERT(trk != nullptr);
+        return trk->filter.velocity_covariance().xx;
+    };
+    TEST_ASSERT(coasted_velocity_variance(100000.0f) > coasted_velocity_variance(1.0f) + 500.0f);
+
+    // Settings that would disable gating or the filter are refused, and the engine stays unusable.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const auto rejects = [](aim::TrackerConfig cfg) {
+        TrackingEngine engine;
+        if (engine.initialize(cfg)) return false;
+        bus::TargetObservationBatch batch{};
+        bus::TrackedTargetBatch out{};
+        return !engine.update(batch, 1'000'000'000LL, out);
+    };
+    aim::TrackerConfig bad{};
+    bad.gate_distance_px = nan;
+    TEST_ASSERT(rejects(bad));
+    bad = {};
+    bad.gate_distance_px = 0.0f;
+    TEST_ASSERT(rejects(bad));
+    bad = {};
+    bad.min_init_confidence = 1.5f;
+    TEST_ASSERT(rejects(bad));
+    bad = {};
+    bad.velocity_process_noise = -1.0f;
+    TEST_ASSERT(rejects(bad));
+    bad = {};
+    bad.measurement_noise = std::numeric_limits<float>::infinity();
+    TEST_ASSERT(rejects(bad));
+
+    std::cout << "  -> Noise plumbing and config validation passed." << std::endl;
+}
+
+void test_non_finite_observation_does_not_seed_track() {
+    std::cout << "[Test 11] Non-finite observations never start a track..." << std::endl;
+
+    MultiTargetTracker tracker{};
+    bus::TargetObservationBatch batch{};
+    batch.add_target(make_obs(std::numeric_limits<float>::quiet_NaN(), 100.0f, 15.0f, 0.95f));
+    batch.add_target(make_obs(100.0f, std::numeric_limits<float>::infinity(), 15.0f, 0.95f));
+    bus::TargetObservation nan_conf = make_obs(200.0f, 200.0f);
+    nan_conf.confidence = std::numeric_limits<float>::quiet_NaN();
+    batch.add_target(nan_conf);
+    bus::TrackedTargetBatch out{};
+    tracker.process(batch, 1'000'000'000LL, 1'000'000'000LL, out);
+    TEST_ASSERT(out.track_count == 0);
+    TEST_ASSERT(tracker.active_track_count() == 0);
+
+    std::cout << "  -> Non-finite seeding guard passed." << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -300,6 +467,10 @@ int main() {
     test_occlusion_retirement_on_excess_misses();
     test_kinematic_tracking_and_direction_change();
     test_multi_target_crossing_identity_preservation();
+    test_kalman_config_reaches_filters();
+    test_engine_maps_confidence_thresholds();
+    test_engine_noise_settings_and_validation();
+    test_non_finite_observation_does_not_seed_track();
 
     std::cout << "====================================================" << std::endl;
     std::cout << " All M4-03 Track Lifecycle Tests Passed!           " << std::endl;

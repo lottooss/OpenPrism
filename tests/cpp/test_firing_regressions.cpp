@@ -416,6 +416,37 @@ void test_reacquisition_and_target_switching() {
   CHECK(gate.evaluate(&target, {960.0f, 540.0f}, target.prediction_time_ns)
             .decision == ShotGateDecision::rejected_cooldown);
 }
+void test_single_frame_detection_cannot_fire() {
+  // A lone 0.82-confidence detection, the shape of a one-frame false positive, clears the shot
+  // gate's 0.80 confidence floor. It used to be confirmed (and so fireable) on its first frame
+  // because the runtime's min_init_confidence of 0.7 was written over the tracker's 0.85
+  // immediate-confirmation threshold.
+  tracking::TrackingEngine tracker;
+  CHECK(tracker.initialize(aim::TrackerConfig{}));
+  bus::TargetObservationBatch batch{};
+  batch.captured_at_ns = start_ns;
+  bus::TargetObservation observation{};
+  observation.center_px = {960.0f, 540.0f};
+  observation.confidence = 0.82f;
+  observation.effective_radius_px = 20.0f;
+  observation.covariance_px2 = {1.0f, 0.0f, 1.0f};
+  batch.add_target(observation);
+  bus::TrackedTargetBatch tracks{};
+  CHECK(tracker.update(batch, start_ns, tracks));
+  CHECK(tracks.track_count == 1);
+  CHECK(tracks.tracks[0].state == bus::TrackState::tentative);
+  ShotGate gate;
+  CHECK(gate.evaluate(&tracks.tracks[0], {960.0f, 540.0f}, start_ns).decision ==
+        ShotGateDecision::rejected_no_fresh_observation);
+
+  // The same target seen again on the next frame is confirmed and may be engaged.
+  batch.captured_at_ns += 7'000'000LL;
+  CHECK(tracker.update(batch, batch.captured_at_ns, tracks));
+  CHECK(tracks.track_count == 1);
+  CHECK(tracks.tracks[0].state == bus::TrackState::confirmed);
+  CHECK(gate.evaluate(&tracks.tracks[0], {960.0f, 540.0f}, batch.captured_at_ns)
+            .authorize_fire);
+}
 } // namespace
 
 int main() {
@@ -426,6 +457,7 @@ int main() {
   test_pipeline_veto_failure_and_cancellation();
   test_no_target_no_motion();
   test_reacquisition_and_target_switching();
+  test_single_frame_detection_cannot_fire();
   test_focus_stop_and_cooldown_recovery();
   std::cout << "Firing regressions passed (no OS input).\n";
 }

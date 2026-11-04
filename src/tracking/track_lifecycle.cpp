@@ -11,6 +11,12 @@ MultiTargetTracker::MultiTargetTracker(TrackerConfig config)
       associator_(config.association_config),
       latency_estimator_(config.latency_config),
       extrapolator_(config.extrapolator_config) {
+    // Each slot's filter was default-constructed, so `kalman_config` (process and measurement
+    // noise) silently never reached the filters. reset() keeps the config, so binding it once
+    // here covers every track that later reuses the slot.
+    for (auto& track : tracks_) {
+        track.filter = AdaptiveKalmanFilter{config_.kalman_config};
+    }
     reset();
 }
 
@@ -162,6 +168,13 @@ void MultiTargetTracker::process(
     for (std::uint32_t u = 0; u < association_result_.num_unassigned_observations; ++u) {
         const std::size_t obs_idx = association_result_.unassigned_observations[u];
         const auto& obs = observations.targets[obs_idx];
+
+        // Never seed a track from a non-finite position, and honour the initialization floor.
+        // The negated comparison also rejects a NaN confidence.
+        if (!std::isfinite(obs.center_px.x) || !std::isfinite(obs.center_px.y) ||
+            !(obs.confidence >= config_.min_init_confidence)) {
+            continue;
+        }
 
         // Find free slot
         for (std::size_t i = 0; i < tracks_.size(); ++i) {

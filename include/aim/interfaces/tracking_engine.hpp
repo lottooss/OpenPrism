@@ -10,10 +10,14 @@ namespace aim {
 
 struct TrackerConfig {
     float gate_distance_px{50.0f};
+    /// Detections below this confidence do not start new tracks (they can still update one).
     float min_init_confidence{0.7f};
     std::uint32_t max_coasting_frames{3};
     float position_process_noise{10.0f};
-    float velocity_process_noise{50.0f};
+    /// 2000 is the filter's built-in default, which every track actually ran with while these
+    /// settings were not plumbed through (including the recorded demo). The old default of 50
+    /// was never applied; switching to it now would be an untested 40x tuning change.
+    float velocity_process_noise{2000.0f};
     float measurement_noise{2.0f};
 };
 

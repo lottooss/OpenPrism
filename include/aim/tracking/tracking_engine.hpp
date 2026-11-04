@@ -1,6 +1,8 @@
 // include/aim/tracking/tracking_engine.hpp
 #pragma once
 
+#include <cmath>
+
 #include "aim/interfaces/tracking_engine.hpp"
 #include "aim/tracking/track_lifecycle.hpp"
 
@@ -15,9 +17,25 @@ public:
         : tracker_(config), initialized_(true) {}
 
     bool initialize(const aim::TrackerConfig& config) noexcept override {
+        // Fail closed on settings that would silently disable gating or the filter.
+        const auto positive = [](float value) { return std::isfinite(value) && value > 0.0f; };
+        if (!positive(config.gate_distance_px) ||
+            !std::isfinite(config.min_init_confidence) ||
+            config.min_init_confidence < 0.0f || config.min_init_confidence > 1.0f ||
+            !positive(config.position_process_noise) ||
+            !positive(config.velocity_process_noise) ||
+            !positive(config.measurement_noise)) {
+            initialized_ = false;
+            return false;
+        }
+
         aim::tracking::TrackerConfig trk_cfg{};
         trk_cfg.association_config.gate_distance_px = config.gate_distance_px;
-        trk_cfg.immediate_confirm_confidence = config.min_init_confidence;
+        // min_init_confidence is the floor for *starting* a track. It used to be written into
+        // immediate_confirm_confidence, which lowered single-frame confirmation from 0.85 to
+        // 0.7, below the shot gate's 0.80 confidence floor, so a single 0.80-0.85 false
+        // positive could be fired on in the frame it appeared.
+        trk_cfg.min_init_confidence = config.min_init_confidence;
         trk_cfg.max_missed_frames = config.max_coasting_frames;
         trk_cfg.kalman_config.q_pos = config.position_process_noise;
         trk_cfg.kalman_config.q_vel = config.velocity_process_noise;

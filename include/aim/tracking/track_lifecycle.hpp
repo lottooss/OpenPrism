@@ -19,6 +19,12 @@ namespace aim::tracking {
 using bus::TrackState;
 
 struct TrackerConfig {
+    /// Unassigned observations below this confidence do not start new tracks. They can still
+    /// update a track that already exists. 0 starts a track from every detection.
+    float min_init_confidence{0.0f};
+    /// A new track whose first observation reaches this confidence is confirmed on that frame.
+    /// Below it, `confirmation_hits` consecutive observations are required. Matches the
+    /// `immediate_confidence` / `require_second_observation_below` defaults in tracker.schema.json.
     float immediate_confirm_confidence{0.85f};
     std::uint32_t confirmation_hits{2};
     std::uint32_t max_missed_frames{3};
