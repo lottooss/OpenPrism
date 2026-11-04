@@ -1,9 +1,14 @@
 // tests/cpp/test_gated_hungarian.cpp
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <vector>
 
 #include "aim/bus/bus_traits.hpp"
@@ -321,6 +326,189 @@ void test_performance_64x64() {
     TEST_ASSERT(avg_us < 2000.0); // Ultra fast
 }
 
+void test_unequal_dimensions_close_range() {
+    std::cout << "[Test 10] Unequal dimensions at close range pick the nearest pair..." << std::endl;
+
+    // Wide covariances keep both candidates inside the Mahalanobis gate, so only the solver
+    // decides. Padding the missing row/column with 1e9 rounded the 2 px vs 20 px difference
+    // away in float, and the farther candidate could win.
+    const Covariance2D wide{100.0f, 0.0f, 100.0f};
+    GatedHungarianAssociator associator{};
+
+    {
+        std::array<TrackHypothesis, 2> tracks = {make_track(120.0f, 100.0f), make_track(102.0f, 100.0f)};
+        std::array<bus::TargetObservation, 1> observations = {make_obs(100.0f, 100.0f)};
+        for (auto& t : tracks) t.position_covariance = wide;
+        for (auto& o : observations) o.covariance_px2 = wide;
+
+        AssociationResult result{};
+        associator.associate(tracks.data(), tracks.size(), observations.data(), observations.size(), result);
+        TEST_ASSERT(result.num_matches == 1);
+        TEST_ASSERT(result.matches[0].track_idx == 1);
+        TEST_ASSERT(result.matches[0].observation_idx == 0);
+        TEST_ASSERT(result.num_unassigned_tracks == 1 && result.unassigned_tracks[0] == 0);
+    }
+
+    {
+        std::array<TrackHypothesis, 1> tracks = {make_track(100.0f, 100.0f)};
+        std::array<bus::TargetObservation, 2> observations = {make_obs(120.0f, 100.0f), make_obs(102.0f, 100.0f)};
+        for (auto& t : tracks) t.position_covariance = wide;
+        for (auto& o : observations) o.covariance_px2 = wide;
+
+        AssociationResult result{};
+        associator.associate(tracks.data(), tracks.size(), observations.data(), observations.size(), result);
+        TEST_ASSERT(result.num_matches == 1);
+        TEST_ASSERT(result.matches[0].observation_idx == 1);
+        TEST_ASSERT(result.num_unassigned_observations == 1 && result.unassigned_observations[0] == 0);
+    }
+
+    std::cout << "  -> Close-range unequal dimensions passed." << std::endl;
+}
+
+void test_forced_gated_pair_breaks_ties_by_distance() {
+    std::cout << "[Test 11] A forced gated pair still leaves the nearest real match..." << std::endl;
+
+    // Both tracks are near observation 0 (5 px and 4 px) and gated from observation 1, so one
+    // track must take a gated pair. Totals 1e9 + 5 and 1e9 + 4 are equal in float.
+    GatedHungarianAssociator associator{};
+    std::array<TrackHypothesis, 2> tracks = {make_track(105.0f, 100.0f), make_track(104.0f, 100.0f)};
+    std::array<bus::TargetObservation, 2> observations = {make_obs(100.0f, 100.0f), make_obs(500.0f, 500.0f)};
+
+    AssociationResult result{};
+    associator.associate(tracks.data(), tracks.size(), observations.data(), observations.size(), result);
+    TEST_ASSERT(result.num_matches == 1);
+    TEST_ASSERT(result.matches[0].track_idx == 1);
+    TEST_ASSERT(result.matches[0].observation_idx == 0);
+    TEST_ASSERT(result.num_unassigned_tracks == 1 && result.unassigned_tracks[0] == 0);
+    TEST_ASSERT(result.num_unassigned_observations == 1 && result.unassigned_observations[0] == 1);
+
+    std::cout << "  -> Forced gated tie-break passed." << std::endl;
+}
+
+void test_random_assignments_match_exhaustive_search() {
+    std::cout << "[Test 12] Randomised assignments match exhaustive search..." << std::endl;
+
+    GatedHungarianAssociator associator{};
+    std::uint64_t rng_state = 0x9E3779B97F4A7C15ULL;
+    const auto uniform = [&rng_state]() {
+        rng_state = rng_state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<float>((rng_state >> 40) & 0xFFFFFFULL) / 16777216.0f;
+    };
+    const Covariance2D wide{100.0f, 0.0f, 100.0f};
+
+    constexpr int kTrials = 3000;
+    int unequal_trials = 0;
+    for (int trial = 0; trial < kTrials; ++trial) {
+        const std::size_t n = 1 + static_cast<std::size_t>(uniform() * 5.0f);
+        const std::size_t m = 1 + static_cast<std::size_t>(uniform() * 5.0f);
+        if (n != m) ++unequal_trials;
+
+        // A 90 px box against the 60 px distance gate gives a mix of feasible and gated pairs.
+        std::vector<TrackHypothesis> tracks(n);
+        std::vector<bus::TargetObservation> observations(m);
+        for (auto& t : tracks) {
+            t = make_track(uniform() * 90.0f, uniform() * 90.0f);
+            t.position_covariance = wide;
+        }
+        for (auto& o : observations) {
+            o = make_obs(uniform() * 90.0f, uniform() * 90.0f);
+            o.covariance_px2 = wide;
+        }
+
+        AssociationResult result{};
+        associator.associate(tracks.data(), n, observations.data(), m, result);
+
+        // Exhaustive reference over the padded square problem: fewest forced gated pairs first,
+        // then the lowest total real cost.
+        const std::size_t dim = std::max(n, m);
+        std::vector<std::size_t> perm(dim);
+        std::iota(perm.begin(), perm.end(), std::size_t{0});
+        std::size_t best_gated = std::numeric_limits<std::size_t>::max();
+        double best_sum = std::numeric_limits<double>::infinity();
+        do {
+            std::size_t gated = 0;
+            double sum = 0.0;
+            for (std::size_t i = 0; i < dim; ++i) {
+                const std::size_t j = perm[i];
+                if (i < n && j < m) {
+                    const float c = associator.compute_cost(tracks[i], observations[j]);
+                    if (c >= kGatedCostInfinity) {
+                        ++gated;
+                    } else {
+                        sum += static_cast<double>(c);
+                    }
+                }
+            }
+            if (gated < best_gated || (gated == best_gated && sum < best_sum)) {
+                best_gated = gated;
+                best_sum = sum;
+            }
+        } while (std::next_permutation(perm.begin(), perm.end()));
+
+        double solver_sum = 0.0;
+        for (std::uint32_t k = 0; k < result.num_matches; ++k) {
+            TEST_ASSERT(result.matches[k].cost < kGatedCostInfinity);
+            solver_sum += static_cast<double>(result.matches[k].cost);
+        }
+        const std::size_t expected_matches = std::min(n, m) - best_gated;
+        if (result.num_matches != expected_matches || std::abs(solver_sum - best_sum) > 1e-3) {
+            std::cerr << "  [-] Trial " << trial << " (" << n << " tracks, " << m
+                      << " observations): solver matched " << result.num_matches << " at cost "
+                      << solver_sum << ", optimum is " << expected_matches << " at cost " << best_sum
+                      << std::endl;
+            std::exit(1);
+        }
+        TEST_ASSERT(result.num_unassigned_tracks == n - result.num_matches);
+        TEST_ASSERT(result.num_unassigned_observations == m - result.num_matches);
+    }
+    TEST_ASSERT(unequal_trials > kTrials / 2);
+
+    std::cout << "  -> " << kTrials << " randomised trials (" << unequal_trials
+              << " with unequal counts) matched exhaustive search." << std::endl;
+}
+
+void test_non_finite_inputs_never_match() {
+    std::cout << "[Test 13] Non-finite tracks and observations are never associated..." << std::endl;
+
+    // Every comparison against NaN is false, so NaN used to pass all gates and
+    // std::max(0.0f, NaN) returned 0: a NaN track became a perfect match for anything.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    GatedHungarianAssociator associator{};
+
+    const auto expect_no_match = [&](const TrackHypothesis& track, const bus::TargetObservation& obs) {
+        TEST_ASSERT(associator.compute_cost(track, obs) == kGatedCostInfinity);
+        AssociationResult result{};
+        associator.associate(&track, 1, &obs, 1, result);
+        TEST_ASSERT(result.num_matches == 0);
+        TEST_ASSERT(result.num_unassigned_tracks == 1);
+        TEST_ASSERT(result.num_unassigned_observations == 1);
+    };
+
+    TrackHypothesis nan_track = make_track(nan, 100.0f);
+    expect_no_match(nan_track, make_obs(100.0f, 100.0f));
+
+    expect_no_match(make_track(100.0f, 100.0f), make_obs(100.0f, nan));
+
+    bus::TargetObservation nan_cov = make_obs(100.0f, 100.0f);
+    nan_cov.covariance_px2.xy = nan;
+    expect_no_match(make_track(100.0f, 100.0f), nan_cov);
+
+    TrackHypothesis inf_radius = make_track(100.0f, 100.0f);
+    inf_radius.radius = inf;
+    expect_no_match(inf_radius, make_obs(100.0f, 100.0f));
+
+    // A NaN track among healthy ones must not steal the observation either.
+    std::array<TrackHypothesis, 2> tracks = {make_track(nan, nan), make_track(101.0f, 100.0f)};
+    std::array<bus::TargetObservation, 1> observations = {make_obs(100.0f, 100.0f)};
+    AssociationResult result{};
+    associator.associate(tracks.data(), tracks.size(), observations.data(), observations.size(), result);
+    TEST_ASSERT(result.num_matches == 1);
+    TEST_ASSERT(result.matches[0].track_idx == 1);
+
+    std::cout << "  -> Non-finite gating passed." << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -337,6 +525,10 @@ int main() {
     test_global_optimality_over_greedy();
     test_empty_edge_cases();
     test_performance_64x64();
+    test_unequal_dimensions_close_range();
+    test_forced_gated_pair_breaks_ties_by_distance();
+    test_random_assignments_match_exhaustive_search();
+    test_non_finite_inputs_never_match();
 
     std::cout << "====================================================" << std::endl;
     std::cout << " All M4-02 Gated Hungarian Tests Passed!           " << std::endl;

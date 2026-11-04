@@ -13,6 +13,20 @@ GatedHungarianAssociator::GatedHungarianAssociator(AssociationConfig config)
 float GatedHungarianAssociator::compute_cost(
     const TrackHypothesis& track,
     const bus::TargetObservation& obs) const noexcept {
+    // 0. Non-finite inputs can never be associated. Every comparison against NaN is false, so
+    //    without this gate a NaN position slipped past the distance and Mahalanobis gates and
+    //    `std::max(0.0f, NaN)` turned it into a zero-cost "perfect" match.
+    if (!std::isfinite(track.x) || !std::isfinite(track.y) || !std::isfinite(track.radius) ||
+        !std::isfinite(track.position_covariance.xx) ||
+        !std::isfinite(track.position_covariance.xy) ||
+        !std::isfinite(track.position_covariance.yy) ||
+        !std::isfinite(obs.center_px.x) || !std::isfinite(obs.center_px.y) ||
+        !std::isfinite(obs.effective_radius_px) ||
+        !std::isfinite(obs.covariance_px2.xx) || !std::isfinite(obs.covariance_px2.xy) ||
+        !std::isfinite(obs.covariance_px2.yy)) {
+        return kGatedCostInfinity;
+    }
+
     // 1. Semantic class ID compatibility gate
     if (track.class_id != 0 && obs.semantic_id != 0 && track.class_id != obs.semantic_id) {
         return kGatedCostInfinity;
@@ -61,6 +75,9 @@ float GatedHungarianAssociator::compute_cost(
 
     // 5. Linear weighted combination of spatial and size cost
     const float total_cost = config_.position_weight * dist + config_.radius_weight * radius_penalty;
+    if (!std::isfinite(total_cost) || total_cost >= kGatedCostInfinity) {
+        return kGatedCostInfinity;
+    }
     return std::max(0.0f, total_cost);
 }
 
@@ -95,38 +112,48 @@ void GatedHungarianAssociator::associate(
 
     const std::size_t dim = std::max(n, m);
 
-    // 1. Build square cost matrix with gating values
+    // 1. Build square cost matrix with gating values.
+    //    Padding rows/columns (the dummy partners that make an n != m problem square) cost 0:
+    //    every real row or column pays the same price to pair with a dummy, so padding cannot
+    //    change which real pairs are optimal. Padding with kGatedCostInfinity, as before, mixed
+    //    1e9 into the solver's float potentials, where the representable spacing is 64 and real
+    //    pixel costs (0-60) were rounded away, picking a 20 px match over a 2 px one.
     for (std::size_t i = 0; i < dim; ++i) {
         for (std::size_t j = 0; j < dim; ++j) {
             if (i < n && j < m) {
                 cost_matrix_[i][j] = compute_cost(tracks[i], observations[j]);
             } else {
-                cost_matrix_[i][j] = kGatedCostInfinity;
+                cost_matrix_[i][j] = 0.0f;
             }
         }
     }
 
-    // 2. Exact Hungarian Algorithm (O(dim^3) Kuhn-Munkres minimum cost bipartite matching)
-    std::array<float, kMaxAssociationDimension + 1> u{};
-    std::array<float, kMaxAssociationDimension + 1> v{};
+    // 2. Exact Hungarian Algorithm (O(dim^3) Kuhn-Munkres minimum cost bipartite matching).
+    //    Gated real pairs still cost kGatedCostInfinity, so the solver first minimises how many
+    //    gated pairs it is forced into and then the real cost among the rest. The potentials are
+    //    accumulated in double so those large values keep sub-pixel resolution (spacing ~1e-5 at
+    //    64 * 1e9) and ties between forced gated pairs are still broken by the real distances.
+    std::array<double, kMaxAssociationDimension + 1> u{};
+    std::array<double, kMaxAssociationDimension + 1> v{};
     std::array<int, kMaxAssociationDimension + 1> p{};
     std::array<int, kMaxAssociationDimension + 1> way{};
-    std::array<float, kMaxAssociationDimension + 1> minv{};
+    std::array<double, kMaxAssociationDimension + 1> minv{};
     std::array<bool, kMaxAssociationDimension + 1> used{};
 
     for (std::size_t i = 1; i <= dim; ++i) {
         p[0] = static_cast<int>(i);
         std::size_t j0 = 0;
-        minv.fill(std::numeric_limits<float>::max());
+        minv.fill(std::numeric_limits<double>::max());
         used.fill(false);
         do {
             used[j0] = true;
             const std::size_t i0 = static_cast<std::size_t>(p[j0]);
-            float delta = std::numeric_limits<float>::max();
+            double delta = std::numeric_limits<double>::max();
             std::size_t j1 = 0;
             for (std::size_t j = 1; j <= dim; ++j) {
                 if (!used[j]) {
-                    const float cur = cost_matrix_[i0 - 1][j - 1] - u[i0] - v[j];
+                    const double cur =
+                        static_cast<double>(cost_matrix_[i0 - 1][j - 1]) - u[i0] - v[j];
                     if (cur < minv[j]) {
                         minv[j] = cur;
                         way[j] = static_cast<int>(j0);
@@ -166,7 +193,7 @@ void GatedHungarianAssociator::associate(
             const std::size_t c = j - 1;
             if (r < n && c < m) {
                 const float c_val = cost_matrix_[r][c];
-                if (c_val < kGatedCostInfinity - 1e4f) {
+                if (c_val < kGatedCostInfinity) {
                     AssociationPair pair{};
                     pair.track_idx = static_cast<std::uint32_t>(r);
                     pair.observation_idx = static_cast<std::uint32_t>(c);
