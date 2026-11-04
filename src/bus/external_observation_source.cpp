@@ -39,15 +39,10 @@ bool ExternalObservationSource::start() noexcept {
     }
 
     if (config_.validate_schema) {
-        if (hdr->magic != kShmRingMagic) {
-            telemetry_.last_status = ObservationSourceStatus::schema_mismatch;
-            return false;
-        }
-        if (hdr->version_major != kShmVersionMajor) {
-            telemetry_.last_status = ObservationSourceStatus::schema_mismatch;
-            return false;
-        }
-        if (hdr->channel_id != static_cast<std::uint32_t>(BusPayloadTraits<bus::TargetObservationBatch>::kChannelId)) {
+        // Magic, version, channel and the full slot geometry (capacity, stride, payload size,
+        // header size). A producer whose layout differs would otherwise have its bytes
+        // reinterpreted as observation batches.
+        if (!ring_.layout_matches()) {
             telemetry_.last_status = ObservationSourceStatus::schema_mismatch;
             return false;
         }
@@ -109,6 +104,11 @@ bool ExternalObservationSource::try_read_latest_at(bus::TargetObservationBatch& 
         return false;
     }
 
+    if (res == BusReadResult::layout_mismatch) {
+        telemetry_.last_status = ObservationSourceStatus::schema_mismatch;
+        return false;
+    }
+
     if (res != BusReadResult::ok) {
         telemetry_.last_status = ObservationSourceStatus::malformed_payload;
         return false;
@@ -155,6 +155,15 @@ bool ExternalObservationSource::validate_batch(const bus::TargetObservationBatch
             return false;
         }
         if (target.covariance_px2.xx < 0.0f || target.covariance_px2.yy < 0.0f) {
+            return false;
+        }
+        // A covariance matrix must be positive semi-definite: xy^2 <= xx * yy. Tracking inverts
+        // it for Mahalanobis gating, so an impossible correlation corrupts the filter state.
+        // Doubles keep the products finite; the tolerance admits float rounding at |rho| = 1.
+        const double cxx = static_cast<double>(target.covariance_px2.xx);
+        const double cxy = static_cast<double>(target.covariance_px2.xy);
+        const double cyy = static_cast<double>(target.covariance_px2.yy);
+        if (cxy * cxy > cxx * cyy * (1.0 + 1e-6)) {
             return false;
         }
     }

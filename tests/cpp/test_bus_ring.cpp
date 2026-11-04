@@ -9,7 +9,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <new>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -175,6 +178,42 @@ private:
 
 static_assert(sizeof(TestStressPayload) == 512, "TestStressPayload must be 512 bytes");
 static_assert(alignof(TestStressPayload) == 64, "TestStressPayload must be 64-byte aligned");
+
+// 4 KiB payload for the shared-memory torn-read stress: large enough that the writer can lap
+// a slot while the reader is still copying it. Every word carries the sequence, so a copy that
+// mixes two writes is detectable.
+struct alignas(64) ShmStressPayload {
+    std::uint64_t sequence{0};
+    std::uint64_t words[511]{};
+
+    static ShmStressPayload create(std::uint64_t seq) noexcept {
+        ShmStressPayload p;
+        p.sequence = seq;
+        for (auto& word : p.words) {
+            word = seq;
+        }
+        return p;
+    }
+
+    [[nodiscard]] bool validate() const noexcept {
+        for (const auto word : words) {
+            if (word != sequence) return false;
+        }
+        return true;
+    }
+};
+
+static_assert(sizeof(ShmStressPayload) == 4096, "ShmStressPayload must be 4 KiB");
+
+namespace aim::bus {
+template <>
+struct BusPayloadTraits<ShmStressPayload> {
+    static constexpr std::uint32_t kMagicIdentifier = 0x31535453; // 'STS1'
+    static constexpr ChannelId kChannelId = ChannelId::unknown;
+    static constexpr std::string_view kChannelName = "ShmStressPayload";
+    static constexpr std::string_view kFileExtension = ".sts";
+};
+} // namespace aim::bus
 
 #define TEST_ASSERT(cond, msg) \
     do { \
@@ -651,6 +690,238 @@ bool test_canonical_message_traits() {
     return true;
 }
 
+// TC-BUS-09: SharedMemoryRing cross-thread torn-read stress
+bool test_shared_memory_ring_concurrent_torn_reads() {
+    std::cout << "[RUN] TC-BUS-09: SharedMemoryRing cross-thread torn-read stress...\n";
+
+    // Two slots and a 4 KiB payload let the writer lap the slot a reader is still copying.
+    // The reader used to validate against seq_after, which only changes once a write has
+    // finished, so it accepted copies that mixed two different messages.
+    using Ring = SharedMemoryRing<ShmStressPayload, 2>;
+    const std::string channel_name = "Local\\AimAgent_Test_ShmTornStress";
+    auto writer = Ring::create(channel_name, 9001);
+    TEST_ASSERT(writer.is_valid(), "Stress writer shared memory creation should succeed");
+    auto reader = Ring::open_read_only(channel_name);
+    TEST_ASSERT(reader.is_valid(), "Stress reader attach should succeed");
+
+    std::atomic<bool> start_flag{false};
+    std::atomic<bool> producer_done{false};
+    std::atomic<std::uint64_t> accepted{0};
+    std::atomic<std::uint64_t> corrupt_accepted{0};
+    std::atomic<std::uint64_t> rejected_torn{0};
+
+    std::thread consumer_thread([&]() {
+        while (!start_flag.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        std::uint64_t last_seq = 0;
+        ShmStressPayload item{};
+        while (!producer_done.load(std::memory_order_acquire)) {
+            const BusReadResult res = reader.try_read_latest(item, last_seq);
+            if (res == BusReadResult::ok) {
+                accepted.fetch_add(1, std::memory_order_relaxed);
+                if (!item.validate()) {
+                    corrupt_accepted.fetch_add(1, std::memory_order_relaxed);
+                }
+            } else if (res == BusReadResult::torn_or_overrun) {
+                rejected_torn.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    std::thread producer_thread([&]() {
+        while (!start_flag.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+        std::uint64_t seq = 0;
+        while (std::chrono::steady_clock::now() < deadline) {
+            for (int burst = 0; burst < 256; ++burst) {
+                ++seq;
+                (void)writer.write_latest(ShmStressPayload::create(seq), static_cast<MonotonicNs>(seq));
+            }
+        }
+        producer_done.store(true, std::memory_order_release);
+    });
+
+    start_flag.store(true, std::memory_order_release);
+    producer_thread.join();
+    consumer_thread.join();
+
+    std::cout << "  [*] Writes:                 " << writer.total_produced() << "\n";
+    std::cout << "  [*] Reads accepted:         " << accepted.load() << "\n";
+    std::cout << "  [*] Torn copies rejected:   " << rejected_torn.load() << "\n";
+    std::cout << "  [*] Corrupt copies accepted: " << corrupt_accepted.load() << " (must be 0)\n";
+
+    TEST_ASSERT(accepted.load() > 0, "Reader must accept untorn messages");
+    TEST_ASSERT(corrupt_accepted.load() == 0, "A copy overwritten mid-read must never be accepted");
+
+    std::cout << "  [+] No torn shared-memory copy was accepted.\n";
+    return true;
+}
+
+// TC-BUS-10: SharedMemoryRing treats the segment as untrusted
+bool test_shared_memory_ring_rejects_untrusted_layouts() {
+    std::cout << "[RUN] TC-BUS-10: SharedMemoryRing segment size, layout and slot validation...\n";
+
+    // A) A segment smaller than the ring. On POSIX the read-only mapping used to succeed and the
+    //    first access past the real object raised SIGBUS in the consumer.
+    {
+        using BigRing = SharedMemoryRing<TargetObservationBatch, 16>;
+        static_assert(BigRing::kTotalSegmentBytes > 4 * 4096, "Ring must span several pages");
+        const std::string name = "Local\\AimAgent_Test_UndersizedSegment";
+        auto small = SharedMemorySegment::open_or_create(name, 4096, false);
+        TEST_ASSERT(small.is_valid(), "Creating the undersized segment should succeed");
+
+        // Make the 4 KiB header look like a valid producer so only the size is wrong.
+        auto* hdr = static_cast<IpcControlHeader*>(small.data());
+        hdr->magic = kShmRingMagic;
+        hdr->version_major = kShmVersionMajor;
+        hdr->header_size_bytes = static_cast<std::uint32_t>(sizeof(IpcControlHeader));
+        hdr->channel_id = static_cast<std::uint32_t>(ChannelId::target_observation);
+        hdr->ring_capacity = 16;
+        hdr->slot_stride_bytes = static_cast<std::uint32_t>(BigRing::kSlotBytes);
+        hdr->max_payload_bytes = static_cast<std::uint32_t>(sizeof(TargetObservationBatch));
+        hdr->producer_head_seq.store(1, std::memory_order_release);
+
+        auto reader = BigRing::open_read_only(name);
+        TEST_ASSERT(!reader.is_valid(), "Read-only attach to an undersized segment must fail");
+    }
+
+    using Ring = SharedMemoryRing<ActuationCommand, 8>;
+    const std::string name = "Local\\AimAgent_Test_LayoutChannel";
+    auto writer = Ring::create(name, 77);
+    TEST_ASSERT(writer.is_valid(), "Layout writer creation should succeed");
+    TEST_ASSERT(writer.layout_matches(), "A freshly created ring must match its own layout");
+
+    ActuationCommand cmd{};
+    cmd.delta_x_counts = 7;
+    TEST_ASSERT(writer.write_latest(cmd, 1000) == BusWriteResult::ok, "First write should succeed");
+
+    auto reader = Ring::open_read_only(name);
+    TEST_ASSERT(reader.is_valid(), "Layout reader attach should succeed");
+    TEST_ASSERT(reader.layout_matches(), "Reader must accept a matching layout");
+
+    // A second read-write handle to tamper with the header the way a foreign producer would.
+    auto tamper = SharedMemorySegment::open_or_create(name, Ring::kTotalSegmentBytes, false);
+    TEST_ASSERT(tamper.is_valid() && !tamper.is_creator(), "Tamper handle must attach, not create");
+    auto* hdr = static_cast<IpcControlHeader*>(tamper.data());
+
+    // B) Every geometry or identity field the reader depends on.
+    struct Mutation {
+        const char* field;
+        std::uint32_t IpcControlHeader::*member;
+        std::uint32_t bad_value;
+    };
+    const Mutation mutations[] = {
+        {"magic", &IpcControlHeader::magic, 0xDEADBEEFu},
+        {"header_size_bytes", &IpcControlHeader::header_size_bytes, 256u},
+        {"channel_id", &IpcControlHeader::channel_id,
+         static_cast<std::uint32_t>(ChannelId::target_observation)},
+        {"ring_capacity", &IpcControlHeader::ring_capacity, 16u},
+        {"slot_stride_bytes", &IpcControlHeader::slot_stride_bytes,
+         static_cast<std::uint32_t>(Ring::kSlotBytes + 64)},
+        {"max_payload_bytes", &IpcControlHeader::max_payload_bytes,
+         static_cast<std::uint32_t>(sizeof(ActuationCommand) + 8)},
+    };
+    for (const auto& mutation : mutations) {
+        const std::uint32_t original = hdr->*(mutation.member);
+        hdr->*(mutation.member) = mutation.bad_value;
+
+        ActuationCommand out{};
+        std::uint64_t seq = 0;
+        if (reader.layout_matches() ||
+            reader.try_read_latest(out, seq) != BusReadResult::layout_mismatch) {
+            std::cerr << "  [-] Mismatched " << mutation.field << " was accepted\n";
+            return false;
+        }
+        auto foreign_writer = Ring::create(name, 78);
+        if (foreign_writer.is_valid()) {
+            std::cerr << "  [-] A writer attached despite mismatched " << mutation.field << "\n";
+            return false;
+        }
+        hdr->*(mutation.member) = original;
+    }
+    {
+        const std::uint16_t original = hdr->version_major;
+        hdr->version_major = static_cast<std::uint16_t>(kShmVersionMajor + 1);
+        ActuationCommand out{};
+        std::uint64_t seq = 0;
+        TEST_ASSERT(reader.try_read_latest(out, seq) == BusReadResult::layout_mismatch,
+                    "A different major protocol version must be rejected");
+        hdr->version_major = original;
+    }
+
+    ActuationCommand out{};
+    std::uint64_t last_seq = 0;
+    TEST_ASSERT(reader.try_read_latest(out, last_seq) == BusReadResult::ok,
+                "Restored layout must read normally");
+    TEST_ASSERT(last_seq == 1 && out.delta_x_counts == 7, "Restored read must return message 1");
+
+    // C) Per-slot identity: payload size and magic are checked inside the seqlock window.
+    cmd.delta_x_counts = 8;
+    TEST_ASSERT(writer.write_latest(cmd, 2000) == BusWriteResult::ok, "Second write should succeed");
+    auto* slot_base = static_cast<std::uint8_t*>(tamper.data()) + Ring::kHeaderBytes;
+    // Sequence 2 lives in slot index (2 - 1) & (Capacity - 1) == 1.
+    auto* slot_hdr = reinterpret_cast<BusSlotHeader*>(slot_base + Ring::kSlotBytes);
+
+    const std::uint32_t real_size = slot_hdr->payload_size;
+    slot_hdr->payload_size = real_size + 8;
+    TEST_ASSERT(reader.try_read_latest(out, last_seq) == BusReadResult::invalid_size,
+                "A slot whose payload size differs from the reader's type must be rejected");
+    slot_hdr->payload_size = real_size;
+
+    const std::uint32_t real_magic = slot_hdr->magic_identifier;
+    slot_hdr->magic_identifier = real_magic ^ 0xFFu;
+    TEST_ASSERT(reader.try_read_latest(out, last_seq) == BusReadResult::invalid_size,
+                "A slot carrying another channel's magic must be rejected");
+    slot_hdr->magic_identifier = real_magic;
+
+    TEST_ASSERT(reader.try_read_latest(out, last_seq) == BusReadResult::ok,
+                "Restored slot must read normally");
+    TEST_ASSERT(last_seq == 2 && out.delta_x_counts == 8, "Restored read must return message 2");
+
+    std::cout << "  [+] Undersized segments, foreign layouts and foreign slots are rejected.\n";
+    return true;
+}
+
+// TC-BUS-11: Writer heartbeat is range-checked, not trusted
+bool test_shared_memory_ring_heartbeat_range() {
+    std::cout << "[RUN] TC-BUS-11: SharedMemoryRing heartbeat range checks...\n";
+
+    using Ring = SharedMemoryRing<ActuationCommand, 8>;
+    const std::string name = "Local\\AimAgent_Test_HeartbeatRange";
+    auto writer = Ring::create(name, 88);
+    auto reader = Ring::open_read_only(name);
+    TEST_ASSERT(writer.is_valid() && reader.is_valid(), "Heartbeat ring should open");
+
+    constexpr MonotonicNs now = 5'000'000'000LL;
+    constexpr MonotonicNs timeout = 50'000'000LL;
+
+    writer.update_heartbeat(now);
+    TEST_ASSERT(reader.is_writer_alive(now, timeout), "Current heartbeat is alive");
+    TEST_ASSERT(!reader.is_writer_alive(now, -1), "A negative timeout must fail closed");
+
+    // The producer may pulse just after the reader sampled its clock.
+    writer.update_heartbeat(now + timeout / 2);
+    TEST_ASSERT(reader.is_writer_alive(now, timeout), "A heartbeat slightly ahead is a benign race");
+
+    // Far-future values used to give a negative age, which counted as alive forever.
+    writer.update_heartbeat(now + 2 * timeout);
+    TEST_ASSERT(!reader.is_writer_alive(now, timeout), "A heartbeat beyond one window ahead is dead");
+    writer.update_heartbeat(std::numeric_limits<MonotonicNs>::max());
+    TEST_ASSERT(!reader.is_writer_alive(now, timeout), "An INT64_MAX heartbeat must not keep a writer alive");
+
+    // Negative values used to overflow `now - last_hb` (undefined behaviour).
+    writer.update_heartbeat(-1);
+    TEST_ASSERT(!reader.is_writer_alive(now, timeout), "A negative heartbeat is corrupt");
+    writer.update_heartbeat(std::numeric_limits<MonotonicNs>::min());
+    TEST_ASSERT(!reader.is_writer_alive(now, timeout), "An INT64_MIN heartbeat is corrupt");
+
+    std::cout << "  [+] Heartbeat values outside the liveness window fail closed.\n";
+    return true;
+}
+
 // =============================================================================
 // Main Entrypoint
 // =============================================================================
@@ -669,10 +940,13 @@ int main() {
     all_passed &= test_latency_benchmark();
     all_passed &= test_shared_memory_ring_ipc();
     all_passed &= test_canonical_message_traits();
+    all_passed &= test_shared_memory_ring_concurrent_torn_reads();
+    all_passed &= test_shared_memory_ring_rejects_untrusted_layouts();
+    all_passed &= test_shared_memory_ring_heartbeat_range();
 
     std::cout << "=================================================================\n";
     if (all_passed) {
-        std::cout << "[+] ALL BUS RING TESTS PASSED SUCCESSFULLY (8/8)\n";
+        std::cout << "[+] ALL BUS RING TESTS PASSED SUCCESSFULLY (11/11)\n";
         std::cout << "=================================================================\n";
         return 0;
     } else {

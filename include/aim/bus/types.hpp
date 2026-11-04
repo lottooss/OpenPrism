@@ -41,8 +41,9 @@ enum class BusReadResult : std::uint8_t {
     ok                  = 0,
     no_new_data         = 1,
     torn_or_overrun     = 2,
-    invalid_size        = 3,
-    uninitialized       = 4
+    invalid_size        = 3, // Slot payload size or magic does not match the reader's type
+    uninitialized       = 4,
+    layout_mismatch     = 5  // Segment header geometry does not match the reader's ring
 };
 
 /// @brief Status result from ring write operations.

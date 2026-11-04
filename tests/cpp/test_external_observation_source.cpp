@@ -317,6 +317,126 @@ int verify_external_shm(const std::string& shm_name, std::uint64_t expected_seq)
     return 0;
 }
 
+void test_untrusted_segment_validation() {
+    std::cout << "[Test 6] Untrusted segment layout, covariance and heartbeat validation..." << std::endl;
+
+    using Ring = SharedMemoryRing<TargetObservationBatch, 16>;
+    const std::string shm_name = "aim_test_untrusted_shm";
+    auto producer = Ring::create(shm_name, 606);
+    TEST_ASSERT(producer.is_valid());
+
+    ExternalObservationSourceConfig config{};
+    config.shm_name = shm_name;
+    config.expected_pipeline_run_id = 606;
+
+    auto tamper = SharedMemorySegment::open_or_create(shm_name, Ring::kTotalSegmentBytes, false);
+    TEST_ASSERT(tamper.is_valid() && !tamper.is_creator());
+    auto* hdr = static_cast<IpcControlHeader*>(tamper.data());
+
+    // Case A: a producer whose slot geometry differs (here: a different payload size) used to be
+    // accepted because only magic, major version and channel were compared.
+    {
+        const std::uint32_t original = hdr->max_payload_bytes;
+        hdr->max_payload_bytes = original - 64;
+        ExternalObservationSource source{config};
+        TEST_ASSERT(!source.start());
+        TEST_ASSERT(source.last_status() == ObservationSourceStatus::schema_mismatch);
+        hdr->max_payload_bytes = original;
+    }
+
+    ExternalObservationSource source{config};
+    TEST_ASSERT(source.start());
+
+    MonotonicNs sim_time_ns = 4'000'000'000LL;
+    producer.update_heartbeat(sim_time_ns);
+
+    TargetObservation good{};
+    good.center_px = PixelPoint{960.0f, 540.0f};
+    good.effective_radius_px = 15.0f;
+    good.confidence = 0.95f;
+    good.covariance_px2 = Covariance2D{4.0f, 1.0f, 4.0f};
+
+    // Case B: the layout changes after the consumer attached (producer restarted differently).
+    {
+        TargetObservationBatch batch{};
+        batch.header.sequence_id = 1;
+        batch.captured_at_ns = sim_time_ns;
+        batch.add_target(good);
+        TEST_ASSERT(producer.write_latest(batch, sim_time_ns) == BusWriteResult::ok);
+
+        const std::uint32_t original = hdr->ring_capacity;
+        hdr->ring_capacity = 32;
+        TargetObservationBatch out{};
+        TEST_ASSERT(!source.try_read_latest_at(out, sim_time_ns));
+        TEST_ASSERT(source.last_status() == ObservationSourceStatus::schema_mismatch);
+        hdr->ring_capacity = original;
+
+        TEST_ASSERT(source.try_read_latest_at(out, sim_time_ns));
+        TEST_ASSERT(out.header.sequence_id == 1);
+    }
+
+    // Case C: a covariance that is not positive semi-definite (|xy| > sqrt(xx * yy)).
+    {
+        TargetObservationBatch batch{};
+        batch.header.sequence_id = 2;
+        batch.captured_at_ns = sim_time_ns;
+        TargetObservation obs = good;
+        obs.covariance_px2 = Covariance2D{1.0f, 50.0f, 1.0f};
+        batch.add_target(obs);
+        TEST_ASSERT(producer.write_latest(batch, sim_time_ns) == BusWriteResult::ok);
+
+        TargetObservationBatch out{};
+        TEST_ASSERT(!source.try_read_latest_at(out, sim_time_ns));
+        TEST_ASSERT(source.last_status() == ObservationSourceStatus::malformed_payload);
+
+        // Perfect correlation is still a valid (singular) covariance.
+        TargetObservationBatch edge{};
+        TargetObservation edge_obs = good;
+        edge_obs.covariance_px2 = Covariance2D{4.0f, 4.0f, 4.0f};
+        edge.add_target(edge_obs);
+        TEST_ASSERT(ExternalObservationSource::validate_batch(edge));
+    }
+
+    // Case D: a heartbeat far in the future used to count as alive forever.
+    {
+        producer.update_heartbeat(std::numeric_limits<MonotonicNs>::max());
+        TargetObservationBatch batch{};
+        batch.header.sequence_id = 3;
+        batch.captured_at_ns = sim_time_ns;
+        batch.add_target(good);
+        producer.write_latest(batch, 0); // timestamp 0 leaves the heartbeat untouched
+
+        TargetObservationBatch out{};
+        TEST_ASSERT(!source.try_read_latest_at(out, sim_time_ns));
+        TEST_ASSERT(source.last_status() == ObservationSourceStatus::producer_dead);
+    }
+
+    source.stop();
+
+    // Case E: a segment smaller than the ring must not be mapped (SIGBUS on POSIX).
+    {
+        const std::string small_name = "aim_test_undersized_obs_shm";
+        auto small = SharedMemorySegment::open_or_create(small_name, 4096, false);
+        TEST_ASSERT(small.is_valid());
+        auto* small_hdr = static_cast<IpcControlHeader*>(small.data());
+        small_hdr->magic = kShmRingMagic;
+        small_hdr->version_major = kShmVersionMajor;
+        small_hdr->header_size_bytes = static_cast<std::uint32_t>(sizeof(IpcControlHeader));
+        small_hdr->channel_id = static_cast<std::uint32_t>(ChannelId::target_observation);
+        small_hdr->ring_capacity = 16;
+        small_hdr->slot_stride_bytes = static_cast<std::uint32_t>(Ring::kSlotBytes);
+        small_hdr->max_payload_bytes = static_cast<std::uint32_t>(sizeof(TargetObservationBatch));
+
+        ExternalObservationSourceConfig small_config{};
+        small_config.shm_name = small_name;
+        ExternalObservationSource small_source{small_config};
+        TEST_ASSERT(!small_source.start());
+        TEST_ASSERT(small_source.last_status() == ObservationSourceStatus::uninitialized);
+    }
+
+    std::cout << "  -> Untrusted segment validation passed." << std::endl;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -335,6 +455,7 @@ int main(int argc, char* argv[]) {
     test_schema_negotiation_and_mismatch_rejection();
     test_malformed_payload_fail_closed_rejection();
     test_buffer_overrun_and_drop_accounting();
+    test_untrusted_segment_validation();
 
     std::cout << "================================================================" << std::endl;
     std::cout << " All Milestone M8-01 External Observation Source Tests Passed!   " << std::endl;

@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -152,7 +153,17 @@ public:
             return seg;
         }
 
-        if (!read_only) {
+        if (read_only) {
+            // A read-only attach cannot grow the segment. Mapping past the end of a smaller
+            // object succeeds on POSIX, but the first access to the missing pages raises SIGBUS,
+            // so a short segment published by another process must be rejected here.
+            struct stat segment_stat{};
+            if (fstat(fd, &segment_stat) == -1 || segment_stat.st_size < 0 ||
+                static_cast<std::size_t>(segment_stat.st_size) < size_bytes) {
+                ::close(fd);
+                return seg;
+            }
+        } else {
             struct stat segment_stat{};
             const bool needs_grow = (fstat(fd, &segment_stat) == -1) ||
                 (static_cast<std::size_t>(segment_stat.st_size) < size_bytes);
@@ -242,11 +253,15 @@ private:
 };
 
 /// @brief Inter-process / shared-memory bounded latest-wins SPSC ring buffer.
-/// Provides zero-allocation, lock-free seqlock publishing with heartbeat and crash recovery.
+/// Provides zero-allocation, lock-free seqlock publishing with heartbeat-based liveness.
+/// The segment is an untrusted boundary: readers verify the published layout and every
+/// slot's identity before handing a payload to the caller.
 template <typename T, std::size_t Capacity = 16>
 class SharedMemoryRing {
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
     static_assert(Capacity >= 2, "Capacity must be at least 2");
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "Shared-memory payloads are copied as raw bytes across processes");
 
 public:
     struct alignas(64) Slot {
@@ -275,6 +290,10 @@ public:
 
         if (ring.segment_.is_creator()) {
             ring.initialize_header(pipeline_run_id);
+        } else if (!ring.layout_matches()) {
+            // Writing this ring's slot geometry into a segment laid out for another payload
+            // or capacity would corrupt it for every other attached process.
+            ring.detach();
         }
         return ring;
     }
@@ -295,6 +314,22 @@ public:
 
     [[nodiscard]] bool is_valid() const noexcept {
         return segment_.is_valid() && control_header_ != nullptr && slots_ != nullptr;
+    }
+
+    /// @brief Returns true when the segment header describes exactly this ring's layout.
+    /// Checks magic, major version, header size, channel, capacity, slot stride and payload size.
+    /// A producer built with a different payload type, capacity or protocol revision fails here
+    /// instead of having its bytes reinterpreted as `T`.
+    [[nodiscard]] bool layout_matches() const noexcept {
+        if (!is_valid()) return false;
+        const IpcControlHeader& hdr = *control_header_;
+        return hdr.magic == kShmRingMagic &&
+               hdr.version_major == kShmVersionMajor &&
+               hdr.header_size_bytes == kHeaderBytes &&
+               hdr.channel_id == static_cast<std::uint32_t>(BusPayloadTraits<T>::kChannelId) &&
+               hdr.ring_capacity == Capacity &&
+               hdr.slot_stride_bytes == kSlotBytes &&
+               hdr.max_payload_bytes == sizeof(T);
     }
 
     /// @brief Publishes a message to the shared memory ring buffer.
@@ -342,6 +377,13 @@ public:
             return BusReadResult::no_new_data;
         }
 
+        // The header geometry is published before the first head increment, so the acquire load
+        // above makes it visible. Re-checking on every read also catches a producer restarting
+        // the segment with a different layout after this reader attached.
+        if (!layout_matches()) {
+            return BusReadResult::layout_mismatch;
+        }
+
         for (std::size_t retry = 0; retry < 3; ++retry) {
             const std::uint64_t current_head = control_header_->producer_head_seq.load(std::memory_order_acquire);
             if (current_head <= last_consumed_seq || current_head == 0) {
@@ -356,11 +398,20 @@ public:
                 continue; // Slot being written or wrapped
             }
 
+            const std::uint32_t payload_size = slot.header.payload_size;
+            const std::uint32_t magic_identifier = slot.header.magic_identifier;
             out_item = slot.data;
             std::atomic_thread_fence(std::memory_order_acquire);
 
-            const std::uint64_t s2 = slot.header.seq_after.load(std::memory_order_acquire);
+            // Validate against `seq_before`, the marker the writer makes odd *before* touching the
+            // payload. `seq_after` only changes once a write has finished, so comparing against it
+            // accepted copies taken while the writer was lapping this slot mid-write.
+            const std::uint64_t s2 = slot.header.seq_before.load(std::memory_order_relaxed);
             if (s1 == s2) {
+                if (payload_size != sizeof(T) ||
+                    magic_identifier != BusPayloadTraits<T>::kMagicIdentifier) {
+                    return BusReadResult::invalid_size;
+                }
                 if (last_consumed_seq > 0 && current_head > last_consumed_seq + 1) {
                     const std::uint64_t drops = current_head - last_consumed_seq - 1;
                     total_dropped_ += drops;
@@ -391,11 +442,20 @@ public:
     /// @brief Checks whether the publishing writer is alive based on heartbeat nanoseconds.
     /// @note Fails closed. A writer that has never recorded a heartbeat is reported dead, so a
     /// producer must either pass a non-zero timestamp to `write_latest` or call
-    /// `update_heartbeat` before a consumer will treat its data as fresh.
+    /// `update_heartbeat` before a consumer will treat its data as fresh. The heartbeat is
+    /// written by another process, so it is range-checked rather than trusted: a value at or
+    /// below zero, or more than one timeout window ahead of `current_time_ns`, is reported dead.
     [[nodiscard]] bool is_writer_alive(MonotonicNs current_time_ns, MonotonicNs timeout_ns = 50'000'000) const noexcept {
-        if (!is_valid()) return false;
+        if (!is_valid() || current_time_ns <= 0 || timeout_ns < 0) return false;
         const MonotonicNs last_hb = control_header_->writer_heartbeat_ns.load(std::memory_order_acquire);
-        if (last_hb == 0) return false; // Liveness never proven
+        if (last_hb <= 0) return false; // Liveness never proven, or a corrupt header
+        // Both values are positive here, so neither subtraction can overflow.
+        if (last_hb > current_time_ns) {
+            // A small lead is a benign race: the producer pulsed after this reader sampled its
+            // clock. A larger one means another clock domain or a corrupt header, which would
+            // otherwise keep a dead producer "alive" indefinitely.
+            return (last_hb - current_time_ns) <= timeout_ns;
+        }
         return (current_time_ns - last_hb) <= timeout_ns;
     }
 
@@ -452,6 +512,12 @@ public:
     }
 
 private:
+    void detach() noexcept {
+        segment_ = SharedMemorySegment{};
+        control_header_ = nullptr;
+        slots_ = nullptr;
+    }
+
     void initialize_header(std::uint32_t pipeline_run_id) noexcept {
         control_header_->magic = kShmRingMagic;
         control_header_->version_major = kShmVersionMajor;
